@@ -101,6 +101,8 @@
     <string name="curbox_also_on">Ultimate Blocker Also On</string>
     <string name="label_browser_extension">Browser Extension</string>
     <string name="curbox_extension_repo">curbox-extension</string>
+    <string name="info_about_title">About</string>
+    <string name="info_about_fork_text">This app is an independent fork of Curbox and is not affiliated with or endorsed by the original author.\n\nOriginal project: Curbox\nOriginal author: Nethical\nOriginal source: https://github.com/curbox-app/curbox-android\n\nThis version is licensed under GPLv3.\n\n<b>Legal Notices / License</b>\nOriginal copyright notice\nCopyright © 2023 [Nethical/Curbox]\nThis application is based on Curbox, an independent open-source project licensed under the GNU General Public License version 3 (GPLv3).\n\n<b>Warranty</b>\nThis program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n<b>License</b>\nThis program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License version 3, as published by the Free Software Foundation.\n\n<b>Full license</b>\nhttps://www.gnu.org/licenses/gpl-3.0.html\n\n<b>Source code</b>\nSource code for this version:\nhttps://github.com/namankumar9/UltimateBlocker</string>
     <string name="about_the_developer">About the Developer</string>
     <string name="view_on_github">View on GitHub ↗</string>
     <string name="donate_title">Donate</string>
