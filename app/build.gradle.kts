@@ -59,13 +59,13 @@ android {
     }
 
     defaultConfig {
-        applicationId = "neth.iecal.curbox"
+        applicationId = "app.ultimateblocker"
         minSdk = 26
         targetSdk = 35
         versionCode = 4
         versionName = "4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        resValue("string", "app_name", "Curbox")
+        resValue("string", "app_name", "Ultimate Blocker")
 
         // Every flavor ships every feature unless it opts out below.
         buildConfigField("Boolean", "SUPPORTS_UI_HIDER", "true")
@@ -151,7 +151,7 @@ android {
         debug {
 //            applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            resValue("string", "app_name", "Debug Curbox")
+            resValue("string", "app_name", "Debug Ultimate Blocker")
         }
     }
     compileOptions {
