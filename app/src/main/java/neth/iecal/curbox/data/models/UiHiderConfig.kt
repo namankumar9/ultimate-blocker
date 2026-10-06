@@ -9,7 +9,13 @@ data class UiHiderScript(
     val packageName: String = "",
     val label: String = "",
     val source: String = "",
-    val isEnabled: Boolean = true
+    val isEnabled: Boolean = true,
+    /**
+     * SHA-256 hash (salted with the script id) of the password the user set on the editor screen.
+     * Null or empty means the script is not password protected and can be disabled freely.
+     * Only the hash is persisted, never the plaintext password.
+     */
+    val passwordHash: String? = null
 )
 
 /**

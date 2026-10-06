@@ -32,8 +32,14 @@ class UiHiderFragment : Fragment() {
 
     private val adapter = UiHiderScriptAdapter(
         onClick = { openEditor(it) },
-        onToggle = { id, checked -> viewModel.setScriptEnabled(id, checked) }
+        onToggle = { script, checked -> onScriptToggled(script, checked) }
     )
+
+    private val masterSwitchListener =
+        android.widget.CompoundButton.OnCheckedChangeListener { _, isChecked ->
+            if (isUpdatingUi) return@OnCheckedChangeListener
+            onMasterSwitchToggled(isChecked)
+        }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -48,9 +54,7 @@ class UiHiderFragment : Fragment() {
         binding.rvScripts.layoutManager = LinearLayoutManager(requireContext())
         binding.rvScripts.adapter = adapter
 
-        binding.switchEnableUiHider.setOnCheckedChangeListener { _, isChecked ->
-            if (!isUpdatingUi) viewModel.setIsActive(isChecked)
-        }
+        setMasterSwitchChecked(binding.switchEnableUiHider.isChecked)
         binding.btnAddScript.setOnClickListener { openEditor(null) }
         binding.btnStartNodePicker.setOnClickListener { startNodePicker() }
 
@@ -61,13 +65,70 @@ class UiHiderFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.config.collectLatest { config ->
                 isUpdatingUi = true
-                if (binding.switchEnableUiHider.isChecked != config.isActive) {
-                    binding.switchEnableUiHider.isChecked = config.isActive
-                }
+                setMasterSwitchChecked(config.isActive)
                 adapter.submitList(config.allScripts())
                 isUpdatingUi = false
             }
         }
+    }
+
+    private fun setMasterSwitchChecked(checked: Boolean) {
+        binding.switchEnableUiHider.setOnCheckedChangeListener(null)
+        binding.switchEnableUiHider.isChecked = checked
+        binding.switchEnableUiHider.setOnCheckedChangeListener(masterSwitchListener)
+    }
+
+    /**
+     * Turning UIHider off disables every script at once, so when any enabled script is password
+     * protected the user must enter a matching password first.
+     */
+    private fun onMasterSwitchToggled(isChecked: Boolean) {
+        if (isChecked || viewModel.protectedEnabledScriptIds().isEmpty()) {
+            viewModel.setIsActive(isChecked)
+            return
+        }
+        setMasterSwitchChecked(true)
+        UiHiderPasswordDialog.show(
+            requireContext(),
+            title = getString(R.string.ui_hider_password_dialog_title),
+            message = getString(R.string.ui_hider_password_master_message)
+        ) { password ->
+            when {
+                password == null -> Unit // cancelled; switch stays on
+                viewModel.isAnyProtectedPasswordCorrect(password) ->
+                    viewModel.setIsActive(false)
+                else -> showWrongPassword()
+            }
+        }
+    }
+
+    /**
+     * Handles a per-script toggle. Returns true when the change was applied (or needs no
+     * password); false when it was rejected and the switch must snap back. Disabling a
+     * password-protected script prompts for its password first.
+     */
+    private fun onScriptToggled(script: UiHiderScript, checked: Boolean): Boolean {
+        if (checked || script.passwordHash.isNullOrEmpty()) {
+            viewModel.setScriptEnabled(script.id, checked)
+            return true
+        }
+        UiHiderPasswordDialog.show(
+            requireContext(),
+            title = getString(R.string.ui_hider_password_dialog_title),
+            message = getString(R.string.ui_hider_password_dialog_message, script.label)
+        ) { password ->
+            when {
+                password == null -> Unit // cancelled; switch stays on
+                viewModel.isScriptPasswordCorrect(script.id, password) ->
+                    viewModel.setScriptEnabled(script.id, false)
+                else -> showWrongPassword()
+            }
+        }
+        return false
+    }
+
+    private fun showWrongPassword() {
+        Toast.makeText(requireContext(), R.string.ui_hider_wrong_password, Toast.LENGTH_SHORT).show()
     }
 
     private fun startNodePicker() {
@@ -93,6 +154,7 @@ class UiHiderFragment : Fragment() {
                 putExtra(UiHiderEditorFragment.EXTRA_LABEL, script.label)
                 putExtra(UiHiderEditorFragment.EXTRA_SOURCE, script.source)
                 putExtra(UiHiderEditorFragment.EXTRA_IS_ENABLED, script.isEnabled)
+                putExtra(UiHiderEditorFragment.EXTRA_PASSWORD_HASH, script.passwordHash)
             }
         }
         startActivity(intent)

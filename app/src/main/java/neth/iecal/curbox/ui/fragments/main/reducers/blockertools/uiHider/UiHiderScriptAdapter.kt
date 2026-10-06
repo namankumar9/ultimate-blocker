@@ -10,7 +10,11 @@ import neth.iecal.curbox.databinding.ItemUiHiderScriptBinding
 
 class UiHiderScriptAdapter(
     private val onClick: (UiHiderScript) -> Unit,
-    private val onToggle: (String, Boolean) -> Unit
+    /**
+     * Invoked when the user flips a script's switch. Returning false means the change was
+     * rejected (e.g. wrong/missing password for a protected script) and the switch snaps back.
+     */
+    private val onToggle: (UiHiderScript, Boolean) -> Boolean
 ) : ListAdapter<UiHiderScript, UiHiderScriptAdapter.ViewHolder>(DiffCallback) {
 
     inner class ViewHolder(val binding: ItemUiHiderScriptBinding) :
@@ -31,13 +35,21 @@ class UiHiderScriptAdapter(
             }
             tvScriptSubtitle.text = script.packageName
 
-            switchScriptEnabled.setOnCheckedChangeListener(null)
-            switchScriptEnabled.isChecked = script.isEnabled
-            switchScriptEnabled.setOnCheckedChangeListener { _, checked ->
-                onToggle(script.id, checked)
-            }
+            bindSwitch(this, script)
 
             root.setOnClickListener { onClick(script) }
+        }
+    }
+
+    private fun bindSwitch(binding: ItemUiHiderScriptBinding, script: UiHiderScript) {
+        binding.switchScriptEnabled.setOnCheckedChangeListener(null)
+        binding.switchScriptEnabled.isChecked = script.isEnabled
+        binding.switchScriptEnabled.setOnCheckedChangeListener { _, checked ->
+            val accepted = onToggle(script, checked)
+            if (!accepted) {
+                // Rejected (e.g. protected script without a correct password): snap back.
+                bindSwitch(binding, script)
+            }
         }
     }
 

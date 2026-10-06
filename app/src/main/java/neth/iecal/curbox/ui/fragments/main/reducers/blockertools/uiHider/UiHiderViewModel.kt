@@ -9,10 +9,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import neth.iecal.curbox.blockers.uihider.ScriptPassword
 import neth.iecal.curbox.blockers.uihider.UiHider
 import neth.iecal.curbox.blockers.uihider.script.Parser
 import neth.iecal.curbox.data.models.UiHiderConfig
 import neth.iecal.curbox.data.models.UiHiderScript
+import neth.iecal.curbox.hardcoded.allScripts
 import neth.iecal.curbox.hardcoded.isPresetUiHiderScript
 import neth.iecal.curbox.hardcoded.normalized
 import neth.iecal.curbox.utils.DataStoreManager
@@ -76,6 +78,25 @@ class UiHiderViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun newScriptId(): String = "uihider_${System.currentTimeMillis()}"
+
+    fun scriptById(id: String): UiHiderScript? = config.value.allScripts().find { it.id == id }
+
+    /** True when [password] unlocks the given script (always true for unprotected scripts). */
+    fun isScriptPasswordCorrect(id: String, password: String): Boolean {
+        val script = scriptById(id) ?: return false
+        return ScriptPassword.verify(id, password, script.passwordHash)
+    }
+
+    /** Enabled scripts that carry a password; disabling any of them (or the whole feature) needs it. */
+    fun protectedEnabledScriptIds(): List<String> = config.value.allScripts()
+        .filter { it.isEnabled && !it.passwordHash.isNullOrEmpty() }
+        .map { it.id }
+
+    /** True when [password] matches any enabled, password-protected script. */
+    fun isAnyProtectedPasswordCorrect(password: String): Boolean =
+        config.value.allScripts()
+            .filter { it.isEnabled && !it.passwordHash.isNullOrEmpty() }
+            .any { ScriptPassword.verify(it.id, password, it.passwordHash) }
 
     /** Compile the source to surface syntax errors; returns the error message, or null if valid. */
     fun validate(source: String): String? = try {

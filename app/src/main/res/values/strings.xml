@@ -1245,6 +1245,17 @@
     <string name="ui_hider_script_label">SCRIPT</string>
     <string name="ui_hider_source_hint">if app != \"com.instagram.android\" { return }\n…</string>
     <string name="ui_hider_preset_note">This preset comes with the app. You can read it here and turn it on or off, but you cannot change it.</string>
+    <string name="ui_hider_password_optional_hint">Password (optional)</string>
+    <string name="ui_hider_password_new_hint">New password (leave blank to keep current)</string>
+    <string name="ui_hider_current_password_hint">Current password</string>
+    <string name="ui_hider_current_password_required">Enter the current password to save changes</string>
+    <string name="ui_hider_password_hint">Password</string>
+    <string name="ui_hider_password_dialog_title">Password required</string>
+    <string name="ui_hider_password_dialog_message">Enter the password to disable \"%1$s\".</string>
+    <string name="ui_hider_password_delete_message">Enter the password to delete this script.</string>
+    <string name="ui_hider_password_master_message">One or more enabled scripts are password protected. Enter a script password to disable UI Hider.</string>
+    <string name="ui_hider_wrong_password">Incorrect password</string>
+    <string name="ui_hider_unlock">Unlock</string>
 
     <string name="node_picker_start">Start Node Picker</string>
     <string name="node_picker_channel_name">Node Picker</string>
