@@ -241,18 +241,36 @@ androidComponents {
             doLast {
                 val adbPath = sdkComponents.adb.get().asFile.absolutePath
                 val appId = variant.applicationId.get()
+                val baseId = "neth.iecal.curbox"
+                val service = "$appId/$baseId.services.AppBlockerService"
                 Thread.sleep(2000)
-                // Grant Accessibility Permission
-                exec {
-                    val baseId = "neth.iecal.curbox"
-                    val services = "$appId/$baseId.services.AppBlockerService"
 
-                    commandLine(adbPath, "shell", "settings", "put", "secure", "enabled_accessibility_services", services)
+                // Preserve any other accessibility services already enabled. Writing the
+                // secure settings value replaces the full list, so appending is required.
+                val grantScript = """
+                    ADB_PATH="${adbPath}"
+                    SERVICE="${service}"
+                    CURRENT=${'$'}(${'$'}ADB_PATH shell settings get secure enabled_accessibility_services 2>/dev/null | tr -d '\r')
+
+                    if [ "${'$'}CURRENT" = "null" ] || [ -z "${'$'}CURRENT" ]; then
+                        NEW="${'$'}SERVICE"
+                    else
+                        case ":${'$'}CURRENT:" in
+                            *":${'$'}SERVICE:"*) NEW="${'$'}CURRENT" ;;
+                            *) NEW="${'$'}CURRENT:${'$'}SERVICE" ;;
+                        esac
+                    fi
+
+                    ${'$'}ADB_PATH shell settings put secure enabled_accessibility_services "${'$'}NEW"
+                    ${'$'}ADB_PATH shell settings put secure accessibility_enabled 1
+                """.trimIndent()
+
+                exec {
+                    commandLine("sh", "-c", grantScript)
                 }
 
                 // Launch MainActivity
                 exec {
-                    val baseId = "neth.iecal.curbox"
                     commandLine(adbPath, "shell", "am", "start", "-n", "$appId/$baseId.ui.activity.FragmentActivity")
                 }
             }
