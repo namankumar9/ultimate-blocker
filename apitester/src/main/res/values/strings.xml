@@ -1,0 +1,15 @@
+<resources>
+    <string name="api_tester_register_condition">Register sample requirement</string>
+    <string name="api_tester_remove_condition">Remove sample requirement</string>
+    <string name="api_tester_condition_label">Sample practice goal</string>
+    <string name="api_tester_condition_title">Sample requirement check</string>
+    <string name="api_tester_condition_message">This is a test provider. Approve to simulate meeting a goal. A real provider must check location or practice progress first.</string>
+    <string name="api_tester_condition_approve">Approve this attempt</string>
+    <string name="api_tester_condition_deny">Keep blocked</string>
+    <string name="api_tester_list_conditions">List requirements</string>
+    <string name="api_tester_not_installed">Could not find the Curbox API. Make sure Curbox is installed and up to date.</string>
+    <string name="api_tester_selected">Selected Curbox: %1$s</string>
+    <string name="api_tester_installation">%1$s (%2$s)</string>
+    <string name="api_tester_choose_installation">Choose a Curbox app</string>
+    <string name="api_tester_requires_v3">%1$s needs API version 3 for this command. Update that Curbox app, or reopen the tester and connect to the updated installation.</string>
+</resources>

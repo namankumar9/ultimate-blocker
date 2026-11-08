@@ -1,7 +1,5 @@
 package neth.iecal.curbox.ui.fragments.main
 
-import neth.iecal.curbox.R
-
 import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
@@ -10,24 +8,25 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import neth.iecal.curbox.BuildConfig
-import neth.iecal.curbox.data.sync.SyncGateway
+import neth.iecal.curbox.R
 import neth.iecal.curbox.databinding.FragmentInfoBinding
-import neth.iecal.curbox.ui.activity.FragmentActivity
-import neth.iecal.curbox.ui.fragments.main.reducers.sync.SyncFragment
-import neth.iecal.curbox.utils.LanguageUtils
-import neth.iecal.curbox.utils.DataStoreManager
+import neth.iecal.curbox.ui.fragments.BackupViewModel
 import neth.iecal.curbox.utils.CrashLogPreview
+import neth.iecal.curbox.utils.DataStoreManager
+import neth.iecal.curbox.utils.LanguageUtils
 
 class InfoFragment : Fragment() {
 
@@ -35,6 +34,13 @@ class InfoFragment : Fragment() {
     private val binding get() = _binding!!
     private val dataStore by lazy { DataStoreManager(requireContext()) }
     private var renderingTrackingSettings = false
+
+    private val backupViewModel: BackupViewModel by viewModels()
+    private val backupPicker = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) backupViewModel.export(uri)
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -47,10 +53,36 @@ class InfoFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        binding.textAppVersion.text = getString(R.string.app_version, BuildConfig.VERSION_NAME)
         setupAccountSection()
         setupUsageTrackingSettings()
         setupClickListeners()
+        setupBackup()
         LanguageUtils.bindLanguageSelector(binding.languageSelector, binding.textCurrentLanguage)
+    }
+
+    private fun setupBackup() {
+        binding.btnBackup.setOnClickListener {
+            backupPicker.launch("curbox_settings_${java.time.LocalDate.now()}.json")
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                backupViewModel.status.collect { status ->
+                    binding.btnBackup.isEnabled = status != BackupViewModel.Status.WORKING
+                    binding.backupProgress.visibility =
+                        if (status == BackupViewModel.Status.WORKING) View.VISIBLE else View.GONE
+                    val message = when (status) {
+                        BackupViewModel.Status.SUCCEEDED -> R.string.backup_saved
+                        BackupViewModel.Status.FAILED -> R.string.backup_save_failed
+                        else -> null
+                    }
+                    if (message != null) {
+                        Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
+                        backupViewModel.dismissResult()
+                    }
+                }
+            }
+        }
     }
 
     private fun setupUsageTrackingSettings() {
@@ -76,50 +108,9 @@ class InfoFragment : Fragment() {
         }
     }
 
-    // Account and sync live here in the Play Store build only. F-Droid stays
-    // offline, so the card never appears and there is no login to be seen. The
-    // login flow opens as its own screen so the keyboard has room to breathe.
+    // Sync removed; keep account section hidden.
     private fun setupAccountSection() {
-        if (BuildConfig.FDROID_VARIANT) return
-
-        binding.cardAccount.visibility = View.VISIBLE
-        binding.btnLogin.setOnClickListener {
-            val intent = Intent(requireContext(), FragmentActivity::class.java).apply {
-                putExtra("fragment", SyncFragment.FRAGMENT_ID)
-            }
-            startActivity(intent)
-        }
-
-        // The card speaks to where someone is: signed out, mid setup, or fully on.
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                SyncGateway.provider.status.collect { s ->
-                    val titleRes: Int
-                    val pitchRes: Int
-                    val buttonRes: Int
-                    when {
-                        s.unlocked -> {
-                            titleRes = R.string.sync_is_on
-                            pitchRes = R.string.sync_is_on_pitch
-                            buttonRes = R.string.manage_sync
-                        }
-                        s.signedIn -> {
-                            titleRes = R.string.sync_across_devices
-                            pitchRes = R.string.sync_finish_setup_pitch
-                            buttonRes = R.string.finish_sync_setup
-                        }
-                        else -> {
-                            titleRes = R.string.sync_across_devices
-                            pitchRes = R.string.sync_across_devices_pitch
-                            buttonRes = R.string.log_in
-                        }
-                    }
-                    binding.textAccountTitle.setText(titleRes)
-                    binding.textAccountPitch.setText(pitchRes)
-                    binding.btnLogin.setText(buttonRes)
-                }
-            }
-        }
+        binding.cardAccount.visibility = View.GONE
     }
 
     private fun setupClickListeners() {

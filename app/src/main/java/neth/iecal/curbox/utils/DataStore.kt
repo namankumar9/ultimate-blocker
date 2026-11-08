@@ -1,5 +1,6 @@
 package neth.iecal.curbox.utils
 
+import neth.iecal.curbox.data.models.ExternalUnlockCondition
 import android.content.Context
 import android.content.Intent
 import android.os.Handler
@@ -9,9 +10,13 @@ import androidx.datastore.core.DataMigration
 import androidx.datastore.core.MultiProcessDataStoreFactory
 import androidx.datastore.core.Serializer
 import com.google.gson.Gson
+import com.google.gson.JsonParseException
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import neth.iecal.curbox.R
 import neth.iecal.curbox.data.models.AppGroup
 import neth.iecal.curbox.data.models.GatedSettingsField
@@ -28,6 +33,7 @@ import neth.iecal.curbox.data.models.upgradeLegacyConfig
 import neth.iecal.curbox.hardcoded.normalized
 import neth.iecal.curbox.services.TemporaryGroupDisableJob
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.lang.reflect.Type
@@ -41,10 +47,11 @@ class GsonSerializer<T>(
 
     override suspend fun readFrom(input: InputStream): T {
         return try {
-            gson.fromJson(input.readBytes().decodeToString(), type) ?: defaultValue
-        } catch (e: Exception) {
-            e.printStackTrace()
-            defaultValue
+            gson.fromJson<T>(input.readBytes().decodeToString(), type)
+                ?: throw IOException("Settings file is empty or null")
+        } catch (e: JsonParseException) {
+            // A failed read must block updates, not replace the saved settings with defaults.
+            throw IOException("Unable to read settings", e)
         }
     }
 
@@ -150,7 +157,43 @@ class DataStoreManager(private val context: Context) {
      * The values the user has requested, including changes still waiting for their deadline.
      * Settings editors should use this flow; blockers must keep using [settings].
      */
-    val settingsForEditing = settings.map(::overlayPendingChanges)
+    val settingsForEditing = settings.map(::overlayPendingChanges).flowOn(Dispatchers.Default)
+
+    suspend fun restoreSettingsDuringOnboarding(backup: Settings) {
+        OnboardingState.restore(context) {
+            val restored = SettingsBackupCodec.forDevice(
+                backup,
+                supportsUiHider = neth.iecal.curbox.BuildConfig.SUPPORTS_UI_HIDER,
+                supportsGrayscale = neth.iecal.curbox.BuildConfig.SUPPORTS_WRITE_SECURE_SETTINGS
+            )
+            settingsDataStore.updateData { restored }
+        }
+        schedulePendingChanges()
+        restoreDueTemporaryAppGroups()
+    }
+
+    suspend fun registerExternalUnlockCondition(condition: ExternalUnlockCondition) {
+        settingsDataStore.updateData { current ->
+            val existing = current.externalUnlockConditions.find {
+                it.packageName == condition.packageName && it.id == condition.id
+            }
+            require(existing == null || existing == condition) { "Condition ids are immutable" }
+            require(existing != null || current.externalUnlockConditions.count {
+                it.packageName == condition.packageName
+            } < 50) { "Too many conditions" }
+            if (existing != null) current else current.copy(
+                externalUnlockConditions = current.externalUnlockConditions + condition
+            )
+        }
+    }
+
+    suspend fun removeExternalUnlockCondition(packageName: String, id: String) {
+        settingsDataStore.updateData { current ->
+            current.copy(externalUnlockConditions = current.externalUnlockConditions.filterNot {
+                it.packageName == packageName && it.id == id
+            })
+        }
+    }
 
     suspend fun updateAppGroups(newGroups: List<AppGroup>) {
         updateGated(GatedSettingsField.APP_GROUPS) { newGroups }
@@ -194,7 +237,10 @@ class DataStoreManager(private val context: Context) {
                         )
                     }
                 ),
-                antiUninstallConfig2 = remote.antiUninstallConfig2.copy(
+                // Active protection must be unlocked on this device. Sync must not turn it
+                // off or replace its password and release tamper-gated pending changes.
+                antiUninstallConfig2 = if (current.antiUninstallConfig2.isEnabled) current.antiUninstallConfig2
+                else remote.antiUninstallConfig2.copy(
                     unlockRequestedAtMs = current.antiUninstallConfig2.unlockRequestedAtMs
                 ),
                 serviceProtectionConfig = remote.serviceProtectionConfig.copy(
@@ -219,6 +265,7 @@ class DataStoreManager(private val context: Context) {
                 mindfulMessageConfig = current.mindfulMessageConfig,
                 uiHiderConfig = current.uiHiderConfig,
                 nextWebsiteRecheckTime = current.nextWebsiteRecheckTime,
+                externalUnlockConditions = current.externalUnlockConditions,
                 settingsChangeDelayConfig2 = delayConfig,
             )
 
@@ -272,9 +319,13 @@ class DataStoreManager(private val context: Context) {
         focusGroupId: String,
         durationInMs: Long,
         pomodoroState: PomodoroState = PomodoroState(),
-        endTimeInMillis: Long = System.currentTimeMillis() + durationInMs
+        endTimeInMillis: Long = System.currentTimeMillis() + durationInMs,
+        requireExitableSession: Boolean = false
     ) {
         settingsDataStore.updateData {
+            require(!requireExitableSession || neth.iecal.curbox.api.ApiRestrictionPolicy.canReplaceFocus(
+                it, System.currentTimeMillis()
+            )) { "The active focus session cannot be ended early" }
             it.copy(
                 activeManualFocusGroupId = Pair(focusGroupId, endTimeInMillis),
                 activePomodoroState = pomodoroState.normalized()
@@ -314,8 +365,11 @@ class DataStoreManager(private val context: Context) {
         return updated.takeIf { advanced }
     }
 
-    suspend fun setManualFocusStateToInactive() {
+    suspend fun setManualFocusStateToInactive(requireExitableSession: Boolean = false) {
         settingsDataStore.updateData {
+            require(!requireExitableSession || neth.iecal.curbox.api.ApiRestrictionPolicy.canReplaceFocus(
+                it, System.currentTimeMillis()
+            )) { "The active focus session cannot be ended early" }
             it.copy(
                 activeManualFocusGroupId = Pair(null, 0L),
                 activePomodoroState = PomodoroState()
@@ -345,6 +399,10 @@ class DataStoreManager(private val context: Context) {
 
     suspend fun updateGrayscaleGroups(newGroups: List<neth.iecal.curbox.data.models.GrayscaleGroup>) {
         updateGated(GatedSettingsField.GRAYSCALE_GROUPS) { newGroups }
+    }
+
+    suspend fun updateUsageBackgroundArt(artName: String) {
+        settingsDataStore.updateData { it.copy(usageBackgroundArt = artName) }
     }
 
     suspend fun updateUsageTrackerIgnoredApps(newApps: List<String>) {
@@ -405,7 +463,8 @@ class DataStoreManager(private val context: Context) {
         var changed = false
         var nextDeadline: Long? = null
         settingsDataStore.updateData { current ->
-            if (current.settingsChangeDelayConfig2.isEnabled) return@updateData current
+            if (current.settingsChangeDelayConfig2.isEnabled ||
+                current.settingsChangeDelayConfig2.requireTamperProtectionOff) return@updateData current
             val groups = current.blockedAppGroups.map { group ->
                 if (group.id == groupId && group.isActive) {
                     changed = true
@@ -429,7 +488,8 @@ class DataStoreManager(private val context: Context) {
         var changed = false
         var nextDeadline: Long? = null
         settingsDataStore.updateData { current ->
-            if (current.settingsChangeDelayConfig2.isEnabled) return@updateData current
+            if (current.settingsChangeDelayConfig2.isEnabled ||
+                current.settingsChangeDelayConfig2.requireTamperProtectionOff) return@updateData current
             val config = current.keywordBlockerConfig
             val groups = config.keywordGroups.map { group ->
                 if (group.id == groupId && group.isActive) {
@@ -451,6 +511,7 @@ class DataStoreManager(private val context: Context) {
         var nextDeadline: Long? = null
         settingsDataStore.updateData { current ->
             if (current.settingsChangeDelayConfig2.isEnabled ||
+                current.settingsChangeDelayConfig2.requireTamperProtectionOff ||
                 !current.reelBlockerConfig.isActive
             ) return@updateData current
             changed = true
@@ -467,41 +528,22 @@ class DataStoreManager(private val context: Context) {
         return changed
     }
 
-    suspend fun restoreDueTemporaryAppGroups() {
+    /**
+     * @param rescheduleAlways false skips rescheduling the job when nothing expired, so the
+     * frequent service heartbeat does not keep cancelling and recreating it.
+     */
+    suspend fun restoreDueTemporaryAppGroups(rescheduleAlways: Boolean = true) {
         var nextDeadline: Long? = null
+        var changed = false
         settingsDataStore.updateData { current ->
-            val now = System.currentTimeMillis()
-            val groups = current.blockedAppGroups.map { group ->
-                when {
-                    group.temporarilyDisabledUntilMs in 1..now ->
-                        group.copy(isActive = true, temporarilyDisabledUntilMs = 0L)
-                    group.temporarilyDisabledUntilMs > now -> {
-                        nextDeadline = minOf(nextDeadline ?: Long.MAX_VALUE, group.temporarilyDisabledUntilMs)
-                        group
-                    }
-                    else -> group
-                }
-            }
-            val keywordConfig = current.keywordBlockerConfig
-            val keywordGroups = keywordConfig.keywordGroups.map { group ->
-                if (group.temporarilyDisabledUntilMs in 1..now) {
-                    group.copy(isActive = true, temporarilyDisabledUntilMs = 0L)
-                } else group
-            }
-            val reelConfig = current.reelBlockerConfig.let { config ->
-                if (config.temporarilyDisabledUntilMs in 1..now) {
-                    config.copy(isActive = true, temporarilyDisabledUntilMs = 0L)
-                } else config
-            }
-            val updated = current.copy(
-                blockedAppGroups = groups,
-                keywordBlockerConfig = keywordConfig.copy(keywordGroups = keywordGroups),
-                reelBlockerConfig = reelConfig
-            )
+            val updated = current.restoreExpiredTemporaryDisables(System.currentTimeMillis())
+            changed = updated != current
             nextDeadline = earliestTemporaryDisable(updated)
             updated
         }
-        neth.iecal.curbox.services.TemporaryGroupDisableJob.schedule(context, nextDeadline)
+        if (changed || rescheduleAlways) {
+            neth.iecal.curbox.services.TemporaryGroupDisableJob.schedule(context, nextDeadline)
+        }
     }
 
     private fun temporaryDisableDeadline(durationMinutes: Long): Long =
@@ -525,11 +567,13 @@ class DataStoreManager(private val context: Context) {
         return deadlines.filter { it > now }.minOrNull()
     }
 
-    suspend fun cancelPendingSettingsChange(fieldName: String) {
+    suspend fun cancelPendingSettingsChange(fieldName: String, expectedAppliesAtMs: Long? = null) {
         settingsDataStore.updateData {
             val config = it.settingsChangeDelayConfig2
             it.copy(settingsChangeDelayConfig2 = config.copy(
-                pendingChanges = config.pendingChanges.filterNot { p -> p.field == fieldName }
+                pendingChanges = config.pendingChanges.filterNot { p ->
+                    p.field == fieldName && (expectedAppliesAtMs == null || p.appliesAtMs == expectedAppliesAtMs)
+                }
             ))
         }
         schedulePendingChanges()
@@ -558,7 +602,7 @@ class DataStoreManager(private val context: Context) {
                 due.forEach { change ->
                     applyPendingValue(settings, change)?.let { settings = it }
                 }
-                settings.copy(settingsChangeDelayConfig2 = settings.settingsChangeDelayConfig2.copy(
+                settings.restoreExpiredTemporaryDisables(now).copy(settingsChangeDelayConfig2 = settings.settingsChangeDelayConfig2.copy(
                     pendingChanges = waiting
                 ))
             }
@@ -573,7 +617,7 @@ class DataStoreManager(private val context: Context) {
      * countdown ends. A stricter instant write also drops the field's pending change, because
      * that pending snapshot no longer matches what the user sees.
      */
-    private suspend fun updateGated(field: GatedSettingsField, computeNewValue: (Settings) -> Any) {
+    private suspend fun updateGated(field: GatedSettingsField, computeNewValue: (Settings) -> Any): Unit = withContext(Dispatchers.Default) {
         var deferredUntilMs = 0L
         var hadPendingForField = false
         var tamperGated = false
@@ -582,7 +626,8 @@ class DataStoreManager(private val context: Context) {
             deferredUntilMs = 0L
             hadPendingForField = false
             tamperGated = false
-            val newValueJson = gson.toJson(computeNewValue(current))
+            unchangedPending = false
+            val newValueJson = gson.toJson(computeNewValue(overlayPendingChanges(current)))
             val proposed = withFieldValue(current, field, newValueJson) ?: return@updateData current
             val delayConfig = current.settingsChangeDelayConfig2
             val existingPending = delayConfig.pendingChanges.find { it.field == field.name }
@@ -605,7 +650,8 @@ class DataStoreManager(private val context: Context) {
                 val now = System.currentTimeMillis()
                 // With no active timer, the pending value is due the instant tamper protection
                 // turns off; applyDuePendingChanges re-checks that condition on every sweep.
-                deferredUntilMs = if (timeGateActive) now + delayConfig.delayMinutes * 60_000L else now
+                val delayMinutes = delayConfig.delayMinutes.coerceIn(0, SettingsChangeDelayConfig.MAX_DELAY_MINUTES)
+                deferredUntilMs = if (timeGateActive) now + delayMinutes * 60_000L else now
                 val pending = PendingSettingsChange(
                     field = field.name,
                     newValueJson = newValueJson,
@@ -619,7 +665,7 @@ class DataStoreManager(private val context: Context) {
         }
         schedulePendingChanges()
         if (unchangedPending) {
-            return
+            return@withContext
         } else if (deferredUntilMs > 0L) {
             notifyChangeDeferred(field, deferredUntilMs, hadPendingForField, tamperGated)
         } else if (hadPendingForField) {
@@ -641,10 +687,11 @@ class DataStoreManager(private val context: Context) {
     }
 
     private suspend fun schedulePendingChanges() {
-        val pending = settingsDataStore.data.first().settingsChangeDelayConfig2.pendingChanges
+        val current = settingsDataStore.data.first()
         neth.iecal.curbox.services.PendingSettingsChangeJob.schedule(
             context.applicationContext,
-            pending
+            current.settingsChangeDelayConfig2,
+            current.antiUninstallConfig2.isEnabled
         )
     }
 
@@ -692,7 +739,7 @@ class DataStoreManager(private val context: Context) {
                     val prefs = gson.fromJson(valueJson, SettingsChangeDelayPrefs::class.java)
                     settings.copy(settingsChangeDelayConfig2 = settings.settingsChangeDelayConfig2.copy(
                         isEnabled = prefs.isEnabled,
-                        delayMinutes = prefs.delayMinutes,
+                        delayMinutes = prefs.delayMinutes.coerceIn(0, SettingsChangeDelayConfig.MAX_DELAY_MINUTES),
                         requireTamperProtectionOff = prefs.requireTamperProtectionOff
                     ))
                 }

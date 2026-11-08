@@ -104,6 +104,14 @@ class ReducersFragment : Fragment() {
             startActivity(intent)
         }
 
+        val advancedAnalyticsCard = view.findViewById<MaterialCardView>(R.id.card_advanced_analytics)
+        advancedAnalyticsCard.setOnClickListener {
+            val intent = Intent(requireContext(), FragmentActivity::class.java).apply {
+                putExtra("fragment", neth.iecal.curbox.ui.fragments.main.reducers.analytics.AdvancedAnalyticsFragment.FRAGMENT_ID)
+            }
+            startActivity(intent)
+        }
+
         val apiCard = view.findViewById<MaterialCardView>(R.id.card_api)
         apiCard.setOnClickListener {
             val intent = Intent(requireContext(), FragmentActivity::class.java).apply {
@@ -135,6 +143,16 @@ class ReducersFragment : Fragment() {
                 putExtra("fragment", neth.iecal.curbox.ui.fragments.main.reducers.advanced.ServiceProtectionFragment.FRAGMENT_ID)
             }
             startActivity(intent)
+        }
+
+        val reducerLogsHeader = view.findViewById<View>(R.id.reducer_logs_header)
+        val reducerLogsContent = view.findViewById<View>(R.id.reducer_logs_content)
+        val reducerLogsArrow = view.findViewById<ImageView>(R.id.reducer_logs_arrow)
+        reducerLogsHeader.setOnClickListener {
+            val isVisible = reducerLogsContent.isVisible
+            TransitionManager.beginDelayedTransition(view.findViewById(R.id.reducers_root), AutoTransition())
+            reducerLogsContent.isVisible = !isVisible
+            reducerLogsArrow.animate().rotation(if (isVisible) 0f else 90f).start()
         }
 
         val advancedHeader = view.findViewById<View>(R.id.advanced_header)

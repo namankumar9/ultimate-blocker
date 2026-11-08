@@ -2,6 +2,8 @@ package neth.iecal.curbox.services
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -59,12 +61,26 @@ class AppBlockerService : BaseBlockingService() {
     private val websiteUsageTracker = WebsiteUsageTracker()
     private val appUsageTracker = AppUsageTracker()
 
+    // Keeps companion apps such as Curbox Sync alive without their own foreground service.
+    private val companionHost by lazy { neth.iecal.curbox.api.CompanionHost.Binder(this) }
+
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private val eventChannel = Channel<AccessibilityEvent>(Channel.CONFLATED) { droppedEvent ->
         droppedEvent.recycle()
     }
     private val websiteObservationChannel = Channel<WebsiteObservation?>(Channel.CONFLATED)
+
+    // A still reel sends no events after its pager stops, so the last scroll is replayed once settled.
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingReelSettleEvent: AccessibilityEvent? = null
+    private val reelSettleRecheck = Runnable {
+        val event = pendingReelSettleEvent ?: return@Runnable
+        pendingReelSettleEvent = null
+        if (eventChannel.trySend(event).isFailure) {
+            event.recycle()
+        }
+    }
 
     private lateinit var crashLogger: CrashLogger
 
@@ -102,6 +118,9 @@ class AppBlockerService : BaseBlockingService() {
 
         try {
             appUsageTracker.onEvent(event)
+            if (reelsCountTracker.onPagerEvent(event)) {
+                scheduleReelSettleRecheck(event)
+            }
             mindfulMessage.onEvent(event)
         } catch (t: Throwable) {
             if (t is CancellationException) throw t
@@ -122,6 +141,19 @@ class AppBlockerService : BaseBlockingService() {
     override fun onInterrupt() {
     }
 
+    private fun scheduleReelSettleRecheck(event: AccessibilityEvent) {
+        mainHandler.removeCallbacks(reelSettleRecheck)
+        pendingReelSettleEvent?.recycle()
+        pendingReelSettleEvent = AccessibilityEvent.obtain(event)
+        mainHandler.postDelayed(reelSettleRecheck, ReelsCountTracker.PAGER_SETTLE_RECHECK_MS)
+    }
+
+    private fun cancelReelSettleRecheck() {
+        mainHandler.removeCallbacks(reelSettleRecheck)
+        pendingReelSettleEvent?.recycle()
+        pendingReelSettleEvent = null
+    }
+
     private fun startBackgroundWorker() {
         serviceScope.launch {
             for (event in eventChannel) {
@@ -130,7 +162,7 @@ class AppBlockerService : BaseBlockingService() {
                     val reelDetection = reelScriptRunner.detect(event)
                     val reelComparator = reelDetection?.comparator
                     reelUsageTracker.onEvent(event, reelComparator)
-                    reelsCountTracker.onEvent(event, reelComparator)
+                    reelsCountTracker.onEvent(event, reelComparator, reelDetection?.position)
                     reelBlocker.doViewBlockerCheck(
                         event,
                         reelComparator,
@@ -221,35 +253,44 @@ class AppBlockerService : BaseBlockingService() {
         }
 
         startBackgroundWorker()
+        companionHost.start()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        cleanupFeature("companions") { companionHost.stop() }
+        cleanupFeature("reel settle recheck") { cancelReelSettleRecheck() }
+        cleanupFeature("event worker") { serviceScope.cancel() }
+        cleanupFeature("event channel") { eventChannel.cancel() }
+        cleanupFeature("website observation channel") { websiteObservationChannel.cancel() }
+
+        cleanupFeature("focus receivers") { focusModeBlocker.removeReceivers() }
+        cleanupFeature("focus mode") { focusModeBlocker.onDestroy() }
+        cleanupFeature("auto DND") { autoDnd.stop() }
+        cleanupFeature("reel blocker") { reelBlocker.removeReceivers() }
+        cleanupFeature("app blocker") { appBlocker.onDestroy() }
+        cleanupFeature("keyword blocker") { keywordBlocker.removeReceivers() }
+        cleanupFeature("grayscale") { grayScaleFilter.unregisterReceivers() }
+        if (BuildConfig.SUPPORTS_UI_HIDER) {
+            cleanupFeature("UI hider") { uiHider.removeReceivers() }
+            cleanupFeature("node picker") { nodePicker.removeReceivers() }
+        }
+        if (BuildConfig.SUPPORTS_ANTI_UNINSTALL) {
+            cleanupFeature("anti uninstall") { antiUninstallBlocker.onDestroy() }
+        }
+        cleanupFeature("mindful messages") { mindfulMessage.onDestroy() }
+        cleanupFeature("reel counter") { reelsCountTracker.onDestroy() }
+        cleanupFeature("reel usage") { reelUsageTracker.onDestroy() }
+        cleanupFeature("website usage") { websiteUsageTracker.onDestroy() }
+        cleanupFeature("app usage") { appUsageTracker.onDestroy() }
+    }
+
+    private inline fun cleanupFeature(name: String, cleanup: () -> Unit) {
         try {
-
-            focusModeBlocker.removeReceivers()
-            focusModeBlocker.onDestroy()
-            autoDnd.stop()
-            reelBlocker.removeReceivers()
-            appBlocker.onDestroy()
-            keywordBlocker.removeReceivers()
-            grayScaleFilter.unregisterReceivers()
-            if (BuildConfig.SUPPORTS_UI_HIDER) {
-                uiHider.removeReceivers()
-                nodePicker.removeReceivers()
-            }
-            if (BuildConfig.SUPPORTS_ANTI_UNINSTALL) {
-                antiUninstallBlocker.onDestroy()
-            }
-            mindfulMessage.onDestroy()
-            reelsCountTracker.onDestroy()
-            reelUsageTracker.onDestroy()
-            websiteUsageTracker.onDestroy()
-            appUsageTracker.onDestroy()
-
-            eventChannel.close()
-            websiteObservationChannel.close()
-            serviceScope.cancel()
-        }catch (_: Exception){}
+            cleanup()
+        } catch (error: Throwable) {
+            Log.e("AppBlockerService", "Failed to clean up $name", error)
+            crashLogger.logNonFatalError(Exception("Failed to clean up $name", error))
+        }
     }
 }

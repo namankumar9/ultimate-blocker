@@ -55,6 +55,10 @@ internal fun createWarningEffortOptions(context: Context) = listOf(
     WarningUnlockOption(
         context.getString(R.string.warning_option_adaptive_math),
         context.getString(R.string.warning_option_adaptive_math_desc)
+    ),
+    WarningUnlockOption(
+        context.getString(R.string.warning_option_external),
+        context.getString(R.string.warning_option_external_desc)
     )
 )
 
@@ -101,6 +105,7 @@ internal object WarningUnlockSelectionMapper {
             config.isTypingRequirementEnabled -> WarningUnlockSelection(EFFORT_INDEX, 1)
             config.isIntentRequirementEnabled -> WarningUnlockSelection(EFFORT_INDEX, 2)
             config.isNfcUnlockRequirementEnabled -> WarningUnlockSelection(EFFORT_INDEX, 3)
+            config.externalUnlockCondition != null -> WarningUnlockSelection(EFFORT_INDEX, 5)
             config.isAdaptiveMathRequirementEnabled -> WarningUnlockSelection(EFFORT_INDEX, 4)
             config.isDynamicIntervalSettingAllowed -> WarningUnlockSelection(NO_EFFORT_INDEX, 0)
             else -> WarningUnlockSelection(NO_EFFORT_INDEX, FIXED_TIME_INDEX)

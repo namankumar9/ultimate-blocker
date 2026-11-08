@@ -12,6 +12,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import neth.iecal.curbox.R
 import java.util.Locale
+import kotlin.math.roundToInt
 
 object ColorPickerDialog {
 
@@ -42,6 +43,10 @@ object ColorPickerDialog {
             ))
         }
 
+        // The slider steps by 1, so snap the fractional brightness to a whole percent.
+        fun brightnessSliderValue(): Float =
+            (colorWheel.getBrightness() * 100f).roundToInt().toFloat()
+
         fun updateHex(color: Int) {
             val value = colorHex(color)
             if (hexInput.text?.toString() != value) {
@@ -54,7 +59,7 @@ object ColorPickerDialog {
         }
 
         colorWheel.setColor(selectedColor)
-        brightnessSlider.value = colorWheel.getBrightness() * 100f
+        brightnessSlider.value = brightnessSliderValue()
         hexInput.setText(colorHex(selectedColor))
         updatePreview(selectedColor)
 
@@ -94,7 +99,7 @@ object ColorPickerDialog {
                 hexInputLayout.error = null
                 isUpdating = true
                 colorWheel.setColor(color)
-                brightnessSlider.value = colorWheel.getBrightness() * 100f
+                brightnessSlider.value = brightnessSliderValue()
                 updatePreview(color)
                 isUpdating = false
             }

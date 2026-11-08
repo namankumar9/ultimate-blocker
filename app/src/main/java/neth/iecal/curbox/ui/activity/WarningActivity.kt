@@ -15,6 +15,7 @@ import android.text.style.ForegroundColorSpan
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -22,13 +23,19 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.gson.Gson
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import neth.iecal.curbox.CrashLogger
 import neth.iecal.curbox.Constants
 import neth.iecal.curbox.nfc.NfcUnlockUtils
 import neth.iecal.curbox.R
+import neth.iecal.curbox.api.ApiAuthStore
+import neth.iecal.curbox.api.ApiRestrictionPolicy
+import neth.iecal.curbox.api.ExternalUnlockAttempt
+import neth.iecal.curbox.api.ExternalUnlockProviders
 import neth.iecal.curbox.blockers.AppBlocker
 import neth.iecal.curbox.blockers.KeywordBlocker
 import neth.iecal.curbox.blockers.ReelBlocker
 import neth.iecal.curbox.data.db.AppDatabase
+import neth.iecal.curbox.data.models.ExternalUnlockCondition
 import neth.iecal.curbox.data.models.AppBlockerWarningScreenConfig
 import neth.iecal.curbox.databinding.DialogWarningOverlayBinding
 import neth.iecal.curbox.utils.DataStoreManager
@@ -48,6 +55,78 @@ import com.google.android.material.color.MaterialColors
 import neth.iecal.curbox.anti_stimulants.MindfulMessage
 
 class WarningActivity : AppCompatActivity() {
+
+    private val externalAttempt = ExternalUnlockAttempt()
+    private var externalWarningConfig: AppBlockerWarningScreenConfig? = null
+    private var externalApproval = false
+    private var externalCheckInProgress = false
+    private var externalCondition: ExternalUnlockCondition? = null
+    private val externalLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val condition = externalCondition
+        val revision = ApiAuthStore.revision(this)
+        val valid = externalAttempt.consume(
+            runCatching { result.data?.getStringExtra(ExternalUnlockProviders.EXTRA_REQUEST_ID) }.getOrNull(),
+            result.resultCode == RESULT_OK,
+            SystemClock.elapsedRealtime(),
+            revision
+        )
+        lifecycleScope.launch {
+            try {
+                if (valid && condition != null &&
+                    externalWarningStillCurrent(condition) &&
+                    revision == ApiAuthStore.revision(this@WarningActivity) &&
+                    ExternalUnlockProviders.isAvailable(this@WarningActivity, condition)) {
+                    externalApproval = true
+                    if (binding.btnProceed.isEnabled) binding.btnProceed.performClick()
+                    externalApproval = false
+                } else {
+                    Toast.makeText(this@WarningActivity, R.string.warning_external_denied, Toast.LENGTH_LONG).show()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                CrashLogger(applicationContext).logNonFatalError(e)
+                Toast.makeText(this@WarningActivity, R.string.warning_external_unavailable, Toast.LENGTH_LONG).show()
+            } finally {
+                externalCheckInProgress = false
+                externalApproval = false
+            }
+        }
+    }
+
+    private suspend fun externalWarningStillCurrent(condition: ExternalUnlockCondition): Boolean {
+        if (!ExternalUnlockProviders.isRegistered(this, condition)) return false
+        val settings = DataStoreManager(this).settings.first()
+        val target = intent.getStringExtra("result_id") ?: return false
+        val expected = externalWarningConfig ?: return false
+        return ApiRestrictionPolicy.warningStillCurrent(settings, intent.getIntExtra("mode", 0), target, expected)
+    }
+
+    private fun checkExternalRequirement(condition: ExternalUnlockCondition) {
+        if (externalCheckInProgress) return
+        externalCheckInProgress = true
+        lifecycleScope.launch {
+            try {
+                if (!externalWarningStillCurrent(condition)) {
+                    externalCheckInProgress = false
+                    Toast.makeText(this@WarningActivity, R.string.warning_external_unavailable, Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                val requestId = java.util.UUID.randomUUID().toString()
+                externalAttempt.start(requestId, SystemClock.elapsedRealtime(), ApiAuthStore.revision(this@WarningActivity))
+                externalLauncher.launch(ExternalUnlockProviders.checkIntent(condition, requestId))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                externalAttempt.clear()
+                externalCheckInProgress = false
+                CrashLogger(applicationContext).logNonFatalError(e)
+                Toast.makeText(this@WarningActivity, R.string.warning_external_unavailable, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     private var proceedTimer: CountDownTimer? = null
     private var dialog: AlertDialog? = null
@@ -108,6 +187,8 @@ class WarningActivity : AppCompatActivity() {
             AppBlockerWarningScreenConfig::class.java
         )
 
+        externalCondition = warningScreenConfig.externalUnlockCondition
+        externalWarningConfig = warningScreenConfig
         val targetId = intent.getStringExtra("result_id") ?: ""
         var isProceedLimitExceeded = false
         var timeUntilNextProceedMn = 0L
@@ -268,6 +349,9 @@ class WarningActivity : AppCompatActivity() {
                             } else if (warningScreenConfig.isNfcUnlockRequirementEnabled && !isNfcScanned) {
                                 button.text = getString(R.string.warning_scan_nfc_tag)
                                 setPrimaryUnlockActionReady(true)
+                            } else if (warningScreenConfig.externalUnlockCondition != null) {
+                                button.setText(R.string.warning_external_check)
+                                setPrimaryUnlockActionReady(true)
                             } else {
                                 button.setText(R.string.proceed)
                                 setPrimaryUnlockActionReady(true)
@@ -340,6 +424,14 @@ class WarningActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            warningScreenConfig.externalUnlockCondition?.let { condition ->
+                if (!externalApproval) {
+                    checkExternalRequirement(condition)
+                    return@setOnClickListener
+                }
+                externalApproval = false
+            }
+
             if (warningScreenConfig.proceedLimitEnabled && targetId.isNotEmpty()) {
                 val limitPrefs = getSharedPreferences("proceed_limits", Context.MODE_PRIVATE)
                 val historyString = limitPrefs.getString("proceeds_$targetId", "") ?: ""
@@ -348,6 +440,10 @@ class WarningActivity : AppCompatActivity() {
                 val windowMillis = warningScreenConfig.proceedsTimeWindowMn * 60_000L
                 val validHistory = history.filter { nowTime - it < windowMillis }.toMutableList()
                 
+                if (validHistory.size >= warningScreenConfig.allowedProceeds) {
+                    binding.btnProceed.isEnabled = false
+                    return@setOnClickListener
+                }
                 validHistory.add(nowTime)
                 limitPrefs.edit { putString("proceeds_$targetId", validHistory.joinToString(",")) }
             }
@@ -703,6 +799,7 @@ class WarningActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        externalAttempt.clear()
         sendWarningScreenVisibility(false)
         super.onDestroy()
         stopNfcUnlockScan()

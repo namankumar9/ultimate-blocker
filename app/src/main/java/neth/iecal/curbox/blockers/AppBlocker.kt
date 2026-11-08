@@ -31,6 +31,7 @@ import neth.iecal.curbox.utils.TimerNotification
 import neth.iecal.curbox.utils.UsageStatsHelper
 import neth.iecal.curbox.utils.activeWindow
 import neth.iecal.curbox.utils.getCurrentKeyboardPackageName
+import neth.iecal.curbox.utils.isActivePackage
 import neth.iecal.curbox.utils.nextChangeAfter
 import java.util.Calendar
 import java.util.concurrent.ConcurrentHashMap
@@ -38,6 +39,7 @@ import java.util.concurrent.ConcurrentHashMap
 class AppBlocker : BaseBlocker() {
 
     companion object {
+        private const val TIMER_NOTIFICATION_ID = 1001
         /**
          * Refreshes information about warning screen, cheat hours and blocked app list
          */
@@ -107,6 +109,7 @@ class AppBlocker : BaseBlocker() {
         if (lastPackage == packageName || ignoredApps.contains(packageName)) {
             return
         }
+        if (!service.isActivePackage(packageName)) return
 
         clearFinishedOnEachOpenSessions(packageName)
 
@@ -206,8 +209,7 @@ class AppBlocker : BaseBlocker() {
             .forEach(::removeCooldownFrom)
     }
 
-    // THIS IS EXPORTED HERE INTENTIONALLY. THE APPBLOCKER SERVICE RUNS IN A DIFFERENT PROCESS THAN
-    // THE MAIN UI.
+    // All senders are in this app, including its other processes (the same UID).
     fun setupReceivers() {
         val filter = IntentFilter().apply {
             addAction(INTENT_ACTION_REFRESH_APP_BLOCKER)
@@ -218,7 +220,7 @@ class AppBlocker : BaseBlocker() {
             service,
             refreshReceiver,
             filter,
-            ContextCompat.RECEIVER_EXPORTED
+            ContextCompat.RECEIVER_NOT_EXPORTED
         )
     }
 
@@ -232,7 +234,9 @@ class AppBlocker : BaseBlocker() {
 
     fun setupAppBlocker(service: BaseBlockingService) {
         this.service = service
-        notificationManager = TimerNotification(service)
+        if (!this::notificationManager.isInitialized) {
+            notificationManager = TimerNotification(service, TIMER_NOTIFICATION_ID)
+        }
         prefs = service.getSharedPreferences("app_blocker_prefs", Context.MODE_PRIVATE)
         usageStats = UsageStatsHelper(service)
         loadPersistedData()
