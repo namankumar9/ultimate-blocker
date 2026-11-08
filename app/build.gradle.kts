@@ -62,8 +62,8 @@ android {
         applicationId = "app.ultimateblocker"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "6"
+        versionCode = 7
+        versionName = "7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         resValue("string", "app_name", "Ultimate Blocker")
 
