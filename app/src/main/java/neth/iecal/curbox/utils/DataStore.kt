@@ -199,6 +199,50 @@ class DataStoreManager(private val context: Context) {
         updateGated(GatedSettingsField.APP_GROUPS) { newGroups }
     }
 
+    /**
+     * Adds newly installed apps to every app group that opted into [AppGroup.autoAddNewApps].
+     *
+     * [installedApps] maps package name to its first install time. A group takes the apps
+     * installed after its [AppGroup.autoAddCheckedUntilMs], then its watermark moves to
+     * [checkedAtMs]. This skips the settings change delay on purpose: it only ever adds
+     * apps to groups, which is stricter. A pending app group edit is patched the same way,
+     * so its timer keeps running and the new app survives when the edit lands.
+     *
+     * Returns true when any group gained an app.
+     */
+    suspend fun addNewlyInstalledApps(installedApps: Map<String, Long>, checkedAtMs: Long): Boolean =
+        withContext(Dispatchers.Default) {
+            var addedAny = false
+            fun patch(groups: List<AppGroup>): List<AppGroup> = groups.map { group ->
+                if (!group.autoAddNewApps) return@map group
+                val existing = group.selectedPackages.toHashSet()
+                val additions = installedApps
+                    .filter { (pkg, installedAt) -> installedAt > group.autoAddCheckedUntilMs && pkg !in existing }
+                    .keys.sorted()
+                if (additions.isNotEmpty()) addedAny = true
+                group.copy(
+                    selectedPackages = group.selectedPackages + additions,
+                    autoAddCheckedUntilMs = maxOf(group.autoAddCheckedUntilMs, checkedAtMs)
+                )
+            }
+            settingsDataStore.updateData { current ->
+                addedAny = false
+                val delayConfig = current.settingsChangeDelayConfig2
+                val pendingChanges = delayConfig.pendingChanges.map { change ->
+                    if (change.field != GatedSettingsField.APP_GROUPS.name) return@map change
+                    val pendingGroups = runCatching {
+                        gson.fromJson<List<AppGroup>>(change.newValueJson, object : TypeToken<List<AppGroup>>() {}.type)
+                    }.getOrNull() ?: return@map change
+                    change.copy(newValueJson = gson.toJson(patch(pendingGroups)))
+                }
+                current.copy(
+                    blockedAppGroups = patch(current.blockedAppGroups),
+                    settingsChangeDelayConfig2 = delayConfig.copy(pendingChanges = pendingChanges)
+                )
+            }
+            addedAny
+        }
+
     suspend fun updateManualFocusGroups(newGroup: List<ManualFocusGroup>){
         settingsDataStore.updateData { it.copy(manualFocusGroups = newGroup) }
     }

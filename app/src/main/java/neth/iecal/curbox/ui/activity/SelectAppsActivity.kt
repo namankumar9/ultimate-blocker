@@ -36,12 +36,19 @@ class SelectAppsActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_ALLOW_CURBOX = "ALLOW_CURBOX"
+        /** Boolean. When present, shows the "add newly installed apps" checkbox with this state and returns it. */
+        const val EXTRA_AUTO_ADD_NEW_APPS = "AUTO_ADD_NEW_APPS"
+        private const val VIEW_APP = 0
+        private const val VIEW_NEW_INSTALLS = 1
     }
 
     private lateinit var binding: ActivitySelectAppsBinding
     private lateinit var selectedAppList: HashSet<String>
 
     private var appItemList: MutableList<AppItem> = mutableListOf()
+    private var appsAdapter: ApplicationAdapter? = null
+    /** Shown only when picking apps for an app-blocker group; null means no "New installs" row. */
+    private var newInstallsChecked: Boolean? = null
 
     // Unified list of (groupName -> packages) from all blocker types
     private var allGroups: List<Pair<String, Set<String>>> = emptyList()
@@ -56,7 +63,7 @@ class SelectAppsActivity : AppCompatActivity() {
     private var allAppsSelected = false
     private fun updateSelectAllButton() {
 
-        val adapter = binding.appList.adapter as? ApplicationAdapter
+        val adapter = appsAdapter
 
         // Check if every app currently in the adapter's list is present in selectedAppList
         allAppsSelected = adapter?.apps?.all { appItem ->
@@ -155,7 +162,7 @@ class SelectAppsActivity : AppCompatActivity() {
                             if (packages != null) {
                                 selectedAppList.addAll(packages)
                                 val slist = sortSelectedItemsToTop(appItemList)
-                                (binding.appList.adapter as ApplicationAdapter).updateData(slist)
+                                appsAdapter?.updateData(slist)
                                 updateSelectAllButton()
                             }
                             true
@@ -168,7 +175,7 @@ class SelectAppsActivity : AppCompatActivity() {
                                 }
                             }
                             val slist = sortSelectedItemsToTop(appItemList)
-                            (binding.appList.adapter as ApplicationAdapter).updateData(slist)
+                            appsAdapter?.updateData(slist)
                             updateSelectAllButton()
                             true
                         }
@@ -180,7 +187,7 @@ class SelectAppsActivity : AppCompatActivity() {
 
         //manages the behaviour of the select all button
         binding.selectAll.setOnClickListener {
-            val currentListAdapter = binding.appList.adapter as? ApplicationAdapter
+            val currentListAdapter = appsAdapter
             currentListAdapter?.let { adapter ->
                 adapter.apps.forEach { appItem ->
                     if(allAppsSelected) {
@@ -256,6 +263,7 @@ class SelectAppsActivity : AppCompatActivity() {
             val selectedAppsArrayList = ArrayList(selectedAppList)
             val resultIntent = intent.apply {
                 putStringArrayListExtra("SELECTED_APPS", selectedAppsArrayList)
+                newInstallsChecked?.let { putExtra(EXTRA_AUTO_ADD_NEW_APPS, it) }
             }
             setResult(RESULT_OK, resultIntent)
             finish()
@@ -264,7 +272,11 @@ class SelectAppsActivity : AppCompatActivity() {
         val sortedAppItemList = sortSelectedItemsToTop(appItemList)
         binding.appList.layoutManager = LinearLayoutManager(this)
         val filteredList = sortedAppItemList.toMutableList()
-        binding.appList.adapter = ApplicationAdapter(filteredList, selectedAppList)
+        if (intent.hasExtra(EXTRA_AUTO_ADD_NEW_APPS)) {
+            newInstallsChecked = intent.getBooleanExtra(EXTRA_AUTO_ADD_NEW_APPS, false)
+        }
+        val adapter = ApplicationAdapter(filteredList, selectedAppList).also { appsAdapter = it }
+        binding.appList.adapter = adapter
 
         binding.searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String?): Boolean {
@@ -280,7 +292,9 @@ class SelectAppsActivity : AppCompatActivity() {
                         it.displayName.contains(query, ignoreCase = true)
                     }
                 )
-                binding.appList.adapter?.notifyDataSetChanged()
+                // The "New installs" row is not an app, so keep it out of search results.
+                appsAdapter?.showNewInstallsRow = query.isEmpty()
+                appsAdapter?.notifyDataSetChanged()
                 return true
             }
         })
@@ -305,15 +319,36 @@ class SelectAppsActivity : AppCompatActivity() {
         var apps: List<AppItem>,
 
         private val selectedAppList: HashSet<String>
-    ) : RecyclerView.Adapter<ApplicationViewHolder>() {
+    ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ApplicationViewHolder {
-            val view = LayoutInflater.from(parent.context).inflate(R.layout.select_apps_item, parent, false)
-            return ApplicationViewHolder(view)
+        /** False while searching. The row itself only exists when [newInstallsChecked] is set. */
+        var showNewInstallsRow = true
+        private val hasNewInstallsRow get() = showNewInstallsRow && newInstallsChecked != null
+        private val offset get() = if (hasNewInstallsRow) 1 else 0
+
+        override fun getItemViewType(position: Int): Int =
+            if (hasNewInstallsRow && position == 0) VIEW_NEW_INSTALLS else VIEW_APP
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+            val inflater = LayoutInflater.from(parent.context)
+            if (viewType == VIEW_NEW_INSTALLS) {
+                val view = inflater.inflate(R.layout.select_apps_new_installs_item, parent, false)
+                return object : RecyclerView.ViewHolder(view) {}
+            }
+            return ApplicationViewHolder(inflater.inflate(R.layout.select_apps_item, parent, false))
         }
 
-        override fun onBindViewHolder(holder: ApplicationViewHolder, position: Int) {
-            val appItem = apps[position]
+        override fun onBindViewHolder(viewHolder: RecyclerView.ViewHolder, position: Int) {
+            if (viewHolder !is ApplicationViewHolder) {
+                val checkbox = viewHolder.itemView.findViewById<CheckBox>(R.id.checkbox)
+                checkbox.setOnCheckedChangeListener(null)
+                checkbox.isChecked = newInstallsChecked == true
+                checkbox.setOnCheckedChangeListener { _, checked -> newInstallsChecked = checked }
+                viewHolder.itemView.setOnClickListener { checkbox.isChecked = !checkbox.isChecked }
+                return
+            }
+            val holder = viewHolder
+            val appItem = apps[position - offset]
 
             holder.appIcon.setImageDrawable(null)
             holder.appName.text = appItem.displayName
@@ -347,7 +382,7 @@ class SelectAppsActivity : AppCompatActivity() {
             }
         }
 
-        override fun getItemCount(): Int = apps.size
+        override fun getItemCount(): Int = apps.size + offset
 
         @SuppressLint("NotifyDataSetChanged")
         fun updateData(newList: List<AppItem>) {
@@ -391,8 +426,7 @@ class SelectAppsActivity : AppCompatActivity() {
 
                         // Update the adapter with the new sorted list
                         val sortedList = sortSelectedItemsToTop(appItemList)
-                        val adapter = binding.appList.adapter as ApplicationAdapter
-                        adapter.updateData(sortedList)
+                        appsAdapter?.updateData(sortedList)
 
                         // Optionally add to selected list
                         selectedAppList.add(packageName)
