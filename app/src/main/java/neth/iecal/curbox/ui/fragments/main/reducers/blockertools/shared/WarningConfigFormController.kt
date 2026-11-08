@@ -1,5 +1,6 @@
 package neth.iecal.curbox.ui.fragments.main.reducers.blockertools.shared
 
+import neth.iecal.curbox.data.models.ExternalUnlockCondition
 import android.transition.AutoTransition
 import android.transition.TransitionManager
 import android.view.View
@@ -32,12 +33,31 @@ internal class WarningConfigFormController(
     }
     private var focusGroupOptions: List<FocusGroupUnlockOption> = emptyList()
     private var selectedFocusGroupId = ""
+    private var selectedExternalCondition: ExternalUnlockCondition? = null
+    private var externalConditions: List<ExternalUnlockCondition> = emptyList()
+
+    fun bindExternalConditions(conditions: List<ExternalUnlockCondition>) {
+        externalConditions = (conditions + listOfNotNull(selectedExternalCondition)).distinct()
+        binding.externalConditionDropdown.setAdapter(android.widget.ArrayAdapter(
+            fragment.requireContext(), android.R.layout.simple_dropdown_item_1line,
+            externalConditions.map { "${it.label} (${it.packageName})" }
+        ))
+        val index = externalConditions.indexOf(selectedExternalCondition)
+        if (index >= 0) binding.externalConditionDropdown.setText(
+            "${externalConditions[index].label} (${externalConditions[index].packageName})", false
+        )
+        binding.externalConditionDropdown.setOnItemClickListener { _, _, position, _ ->
+            selectedExternalCondition = externalConditions[position]
+            binding.externalConditionLayout.error = null
+        }
+    }
 
     fun bind(
         config: AppBlockerWarningScreenConfig,
         isNew: Boolean,
         supportsOnEachOpen: Boolean
     ) {
+        selectedExternalCondition = config.externalUnlockCondition
         this.supportsOnEachOpen = supportsOnEachOpen
         val isOnEachOpenEnabled = supportsOnEachOpen && config.isOnOpenConfig
         binding.switchOnEachOpen.isVisible = supportsOnEachOpen
@@ -289,7 +309,9 @@ internal class WarningConfigFormController(
             proceedLimitEnabled = binding.proceedLimitSwitch.isChecked,
             allowedProceeds = numericInputValue(binding.allowedProceedsInput).toInt(),
             proceedsTimeWindowMn = selectedProceedWindowMinutes(),
-            isOnOpenConfig = isOnEachOpenEnabled()
+            isOnOpenConfig = isOnEachOpenEnabled(),
+            externalUnlockCondition = if (selectedChallengeIndex() == WarningUnlockSelectionMapper.EFFORT_INDEX &&
+                selectedSecondaryIndex(selectedChallengeIndex()) == 5) selectedExternalCondition else null
         )
     }
 
@@ -313,6 +335,11 @@ internal class WarningConfigFormController(
     }
 
     fun validate(): Boolean {
+        if (selectedChallengeIndex() == WarningUnlockSelectionMapper.EFFORT_INDEX &&
+            selectedSecondaryIndex(selectedChallengeIndex()) == 5 && selectedExternalCondition == null) {
+            binding.externalConditionLayout.error = fragment.getString(R.string.warning_external_select)
+            return false
+        }
         if (!numericInputs().all { validateNumericInput(it) }) {
             return false
         }
@@ -459,6 +486,7 @@ internal class WarningConfigFormController(
         binding.nfcSetupContainer.isVisible = false
         binding.typingSetupContainer.isVisible = false
         binding.mathSetupContainer.isVisible = false
+        binding.externalConditionLayout.isVisible = false
     }
 
     private fun updateSecondaryDropdown(challengeIndex: Int) {
@@ -501,7 +529,7 @@ internal class WarningConfigFormController(
             WarningUnlockSelectionMapper.NO_EFFORT_INDEX ->
                 secondaryIndex == WarningUnlockSelectionMapper.FIXED_TIME_INDEX
             WarningUnlockSelectionMapper.EFFORT_INDEX ->
-                secondaryIndex == 1 || secondaryIndex == 2 || secondaryIndex == 4
+                secondaryIndex == 1 || secondaryIndex == 2 || secondaryIndex == 4 || secondaryIndex == 5
             else -> false
         }
         binding.timingContainer.isVisible = !isOnEachOpenEnabled() && usesSharedTiming
@@ -520,6 +548,8 @@ internal class WarningConfigFormController(
         binding.nfcSetupContainer.isVisible =
             challengeIndex == WarningUnlockSelectionMapper.EFFORT_INDEX &&
                 secondaryIndex == 3
+        binding.externalConditionLayout.isVisible =
+            challengeIndex == WarningUnlockSelectionMapper.EFFORT_INDEX && secondaryIndex == 5
         binding.mathSetupContainer.isVisible =
             challengeIndex == WarningUnlockSelectionMapper.EFFORT_INDEX &&
                 secondaryIndex == 4

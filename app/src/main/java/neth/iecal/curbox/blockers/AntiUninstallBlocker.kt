@@ -1,6 +1,7 @@
 package neth.iecal.curbox.blockers
 
 import android.accessibilityservice.AccessibilityService
+import android.content.ComponentName
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -32,6 +33,7 @@ class AntiUninstallBlocker : BaseBlocker() {
         // The AOSP activity that activates or deactivates a device admin.
         const val DEVICE_ADMIN_SCREEN_CLASS = "DeviceAdminAdd"
         const val SETTINGS_PACKAGE = "com.android.settings"
+        const val ACCESSIBILITY_SHORTCUT_TITLE = "accessibility_shortcut_title"
         const val SCREEN_SCAN_INTERVAL_MS = 300L
         val SERVICE_LABELS = listOf("App Blocker")
     }
@@ -40,6 +42,9 @@ class AntiUninstallBlocker : BaseBlocker() {
     private var lastScreenScan = 0L
     private lateinit var service: AppBlockerService
     private var settingsJob: kotlinx.coroutines.Job? = null
+
+    // Resolving these needs binder calls, so build the label once per blocker instance.
+    private val shortcutTitle by lazy { buildShortcutTitle() }
 
     private var foundCount = 0
     fun setupBlocker(service: BaseBlockingService) {
@@ -85,7 +90,7 @@ class AntiUninstallBlocker : BaseBlocker() {
         }
 
         //Accessibility Service Block
-        val matches = service.rootInActiveWindow.findAccessibilityNodeInfosByText("Curbox App Blocker shortcut")
+        val matches = service.rootInActiveWindow.findAccessibilityNodeInfosByText(shortcutTitle)
         if(!matches.isNullOrEmpty()){
             bounce()
             return
@@ -132,6 +137,45 @@ class AntiUninstallBlocker : BaseBlocker() {
             NodeFinder.recycle(source)
         }
     }
+    /**
+     * The title Settings shows for the accessibility shortcut. The format string lives in the
+     * Settings app, so read it from there to match the device language and Android version.
+     */
+    private fun buildShortcutTitle(): String {
+        val serviceLabel = accessibilityServiceLabel()
+        val settingsResources = try {
+            service.packageManager.getResourcesForApplication(SETTINGS_PACKAGE)
+        } catch (_: Exception) {
+            null
+        }
+        val titleId = settingsResources?.getIdentifier(
+            ACCESSIBILITY_SHORTCUT_TITLE,
+            "string",
+            SETTINGS_PACKAGE
+        ) ?: 0
+        if (settingsResources != null && titleId != 0) {
+            try {
+                return settingsResources.getString(titleId, serviceLabel)
+            } catch (_: Exception) {
+            }
+        }
+        // Fallback for a Settings build that does not expose the string.
+        return "$serviceLabel shortcut"
+    }
+
+    /** The label Settings lists our accessibility service under. */
+    private fun accessibilityServiceLabel(): String {
+        return try {
+            val component = ComponentName(service, AppBlockerService::class.java)
+            service.packageManager.getServiceInfo(component, 0)
+                .loadLabel(service.packageManager)
+                .toString()
+        } catch (_: Exception) {
+            // The label declared on AppBlockerService in the manifest.
+            "Curbox App Blocker"
+        }
+    }
+
     private fun traverseNodesForKeywords(node: AccessibilityNodeInfo?) {
         if (node == null) {
             return

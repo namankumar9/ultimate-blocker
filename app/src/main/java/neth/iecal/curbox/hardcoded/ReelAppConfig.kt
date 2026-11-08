@@ -8,6 +8,9 @@ class ReelAppConfig {
         const val INSTAGRAM_PACKAGE = "com.instagram.android"
         const val INSTAGRAM_DM_REEL_MARKER = "\u001Fcurbox:instagram_dm_inbox:\u001F"
 
+        /** Marks the script report line that carries the reel position, such as a recycler row. */
+        const val REEL_POSITION_MARKER = "\u001Fcurbox:reel_position:\u001F"
+
         private fun isOnScreenFunction() = """
             fn isOnScreen(node) {
                 if node == null or not node.visible { return false }
@@ -19,43 +22,102 @@ class ReelAppConfig {
         private fun instagramScript(packageName: String) = """
             ${isOnScreenFunction()}
 
-            viewer = find(id="$packageName:id/clips_viewer_view_pager")
-            controls = find(id="$packageName:id/clips_ufi_component")
-            if not isOnScreen(viewer) or not isOnScreen(controls) { return null }
-
-            dmReplyBar = find(id="$packageName:id/reply_bar_container_scroll_view")
-            openedFromDmInbox = isOnScreen(dmReplyBar)
-
-            comparator = ""
-            caption = find(id="$packageName:id/clips_captions_component")
-            author = find(id="$packageName:id/clips_author_username")
-            if caption != null { comparator = comparator + caption.subtreeText(32, 20000) }
-            if author != null { comparator = comparator + author.subtreeText(32, 20000) }
-            if openedFromDmInbox {
-                return "$INSTAGRAM_DM_REEL_MARKER" + comparator
+            # Hidden copies stay in the tree, such as the Reels tab under a reel opened from Explore.
+            fn findOnScreen(viewId) {
+                for node in findAll(id="$packageName:id/" + viewId) {
+                    if isOnScreen(node) { return node }
+                }
+                return null
             }
-            return comparator
+
+            # Searching inside a reel page misses its children, so match window wide nodes by bounds.
+            fn findInPage(page, viewId) {
+                for node in findAll(id="$packageName:id/" + viewId) {
+                    # Ad controls can overflow the page a little, so match by centre.
+                    if isOnScreen(node) and node.cy >= page.top and node.cy <= page.bottom {
+                        return node
+                    }
+                }
+                return null
+            }
+
+            # The pager keeps its neighbours attached, so only the page that fills it is current.
+            fn findFullPage(viewer) {
+                for overlay in findAll(id="$packageName:id/clips_item_overlay_component") {
+                    if overlay.visible and overlay.h >= viewer.h * 0.99 { return overlay }
+                }
+                return null
+            }
+
+            viewer = findOnScreen("clips_viewer_view_pager")
+            if viewer == null { return null }
+
+            prefix = ""
+            if findOnScreen("reply_bar_container_scroll_view") != null { prefix = "$INSTAGRAM_DM_REEL_MARKER" }
+
+            # A blank result keeps the reel screen active while a swipe is in progress.
+            page = findFullPage(viewer)
+            if page == null { return prefix }
+            if findInPage(page, "clips_ufi_component") == null { return null }
+
+            # The first line must stay the author because the counter dedupes by it.
+            author = findInPage(page, "clips_author_username")
+            if author == null or author.text == null { return prefix }
+            comparator = author.text
+            caption = findInPage(page, "clips_caption_component")
+            if caption != null { comparator = comparator + "\n" + caption.subtreeText(4, 4000) }
+            for countId in ["comment_count", "repost_count", "save_count"] {
+                count = findInPage(page, countId)
+                if count != null and count.text != null { comparator = comparator + "\n" + count.text }
+            }
+
+            # Each lookup is a separate read, so a swipe that started meanwhile can mix two reels.
+            if findFullPage(viewer) == null { return prefix }
+            return prefix + comparator
         """.trimIndent()
+
+        private fun instagramData(packageName: String) = ReelAppData(
+            scriptSource = instagramScript(packageName),
+            // Seekbar updates keep content events flowing, so a dropped scroll event cannot hide a reel.
+            eventType = AccessibilityEvent.TYPE_VIEW_SCROLLED or
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+            pagerClassName = "androidx.viewpager.widget.ViewPager"
+        )
 
         private fun youtubeScript(packageName: String) = """
             ${isOnScreenFunction()}
 
+            # The recycler keeps its neighbours attached while scrolling, so only the page that fills it is current.
+            fn findFullPage(viewer) {
+                for page in viewer.children() {
+                    if page.visible and page.h >= viewer.h * 0.99 { return page }
+                }
+                return null
+            }
+
             viewer = find(id="$packageName:id/reel_recycler")
             if not isOnScreen(viewer) { return null }
 
-            comparator = find(id="$packageName:id/reel_player_page_content")
-            if comparator == null { return "" }
-            return comparator.subtreeText(32, 20000)
+            page = findFullPage(viewer)
+            if page == null { return "" }
+
+            # The first line must stay the author because the counter dedupes by it.
+            channel = page.find(descContains="Go to channel")
+            author = "?"
+            if channel != null and channel.desc != null { author = channel.desc }
+
+            # Scroll events carry no item index, but YouTube stores the reel row on each page.
+            row = page.rowIndex
+            content = page.find(id="$packageName:id/reel_player_page_content")
+            if content == null { content = page }
+            text = content.subtreeText(32, 20000)
+            if row == null { return author + "\n" + text }
+            return "$REEL_POSITION_MARKER" + str(row) + "\n" + author + "\n" + text
         """.trimIndent()
 
         val reelData: Map<String, ReelAppData> = mapOf(
-            INSTAGRAM_PACKAGE to ReelAppData(
-                scriptSource = instagramScript(INSTAGRAM_PACKAGE)
-            ),
-
-            "com.myinsta.android" to ReelAppData(
-                scriptSource = instagramScript("com.myinsta.android")
-            ),
+            INSTAGRAM_PACKAGE to instagramData(INSTAGRAM_PACKAGE),
+            "com.myinsta.android" to instagramData("com.myinsta.android"),
 
             "com.instagram.lite" to ReelAppData(
                 scriptSource = """
@@ -76,17 +138,23 @@ class ReelAppConfig {
             "com.google.android.youtube" to ReelAppData(
                 scriptSource = youtubeScript("com.google.android.youtube"),
                 comparisonResultCleanser = ::cleanYouTubeComparator,
-                eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+                    AccessibilityEvent.TYPE_VIEW_SCROLLED,
+                positionMarker = REEL_POSITION_MARKER
             ),
             "app.revanced.android.youtube" to ReelAppData(
                 scriptSource = youtubeScript("app.revanced.android.youtube"),
                 comparisonResultCleanser = ::cleanYouTubeComparator,
-                eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+                    AccessibilityEvent.TYPE_VIEW_SCROLLED,
+                positionMarker = REEL_POSITION_MARKER
             ),
             "app.morphe.android.youtube" to ReelAppData(
                 scriptSource = youtubeScript("app.morphe.android.youtube"),
                 comparisonResultCleanser = ::cleanYouTubeComparator,
-                eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+                    AccessibilityEvent.TYPE_VIEW_SCROLLED,
+                positionMarker = REEL_POSITION_MARKER
             ),
 
             "com.facebook.katana" to ReelAppData(

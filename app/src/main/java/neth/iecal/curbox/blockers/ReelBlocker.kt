@@ -1,12 +1,10 @@
 package neth.iecal.curbox.blockers
 
-import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Context.RECEIVER_EXPORTED
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.Build
+import androidx.core.content.ContextCompat
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import com.google.gson.Gson
@@ -33,6 +31,7 @@ import java.util.Calendar
 class ReelBlocker : BaseBlocker() {
 
     companion object {
+        private const val TIMER_NOTIFICATION_ID = 1003
         const val INTENT_ACTION_REFRESH_REEL_BLOCKER = "neth.iecal.curbox.refresh.reelblocker"
         const val INTENT_ACTION_REFRESH_REEL_BLOCKER_COOLDOWN =
             "neth.iecal.curbox.refresh.reelblocker.cooldown"
@@ -126,7 +125,9 @@ class ReelBlocker : BaseBlocker() {
 
 
     fun applyCooldown(viewId: String, endTime: Long) {
-        notificationManager.startTimer(totalMillis = endTime - SystemClock.uptimeMillis(), timerId = viewId, title = service.getString(R.string.notification_remaining_usage_reels_lockdown))
+        val now = SystemClock.uptimeMillis()
+        if (endTime <= now) return
+        notificationManager.startTimer(totalMillis = endTime - now, timerId = viewId, title = service.getString(R.string.notification_remaining_usage_reels_lockdown))
         cooldownViewIdsList[viewId] = endTime
     }
 
@@ -134,7 +135,9 @@ class ReelBlocker : BaseBlocker() {
     fun setupBlocker(service: BaseBlockingService) {
         this.service = service
 
-        notificationManager = TimerNotification(service)
+        if (!this::notificationManager.isInitialized) {
+            notificationManager = TimerNotification(service, TIMER_NOTIFICATION_ID)
+        }
 
         settingsJob?.cancel()
         countJob?.cancel()
@@ -175,17 +178,14 @@ class ReelBlocker : BaseBlocker() {
         }
     }
 
-    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     fun setupReceivers(){
         val filter = IntentFilter().apply {
             addAction(INTENT_ACTION_REFRESH_REEL_BLOCKER)
             addAction(INTENT_ACTION_REFRESH_REEL_BLOCKER_COOLDOWN)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            service.registerReceiver(refreshReceiver, filter, RECEIVER_EXPORTED)
-        } else {
-            service.registerReceiver(refreshReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            service, refreshReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     fun removeReceivers(){
@@ -206,6 +206,7 @@ class ReelBlocker : BaseBlocker() {
                         "selected_time",
                         reelBlockerConfig.warningScreenConfig.timeInterval
                     )
+                    if (interval <= 0L) return
                     val currentUptime = SystemClock.uptimeMillis()
                     val endTime = if (interval > Long.MAX_VALUE - currentUptime) {
                         Long.MAX_VALUE

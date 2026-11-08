@@ -9,18 +9,30 @@ package neth.iecal.curbox.api
  */
 object CurboxApiContract {
 
-    const val API_VERSION = 2
+    const val API_VERSION = 6
 
     // Argument keys placed in the Bundle passed to execute().
     const val ARG_TARGET = "target"
     const val ARG_ENABLE = "enable"
     const val ARG_MINUTES = "minutes"
+    /** Since version 4: optional exact epoch millis end for START_FOCUS. Wins over [ARG_MINUTES]. */
+    const val ARG_ENDS_AT = "ends_at"
 
     // Keys used in the JSON returned by query().
     const val VAR_FOCUS_GROUP = "focus_group"
     const val VAR_FOCUS_REMAINING = "focus_remaining"
+    /** Since version 4: the active group's id and exact end time in epoch millis. */
+    const val VAR_FOCUS_GROUP_ID = "focus_group_id"
+    const val VAR_FOCUS_ENDS_AT = "focus_ends_at"
     const val VAR_SCREENTIME = "screentime"
     const val VAR_REELS = "reels"
+
+    /**
+     * Since version 6: an allowed app that declares a service for this action can ask Curbox to
+     * keep it running with HOST_COMPANION. Curbox's blocker service binds it, so the app needs no
+     * foreground service of its own. Return null from onBind to decline.
+     */
+    const val ACTION_COMPANION = "neth.iecal.curbox.api.COMPANION"
 
     // Status strings returned by execute().
     const val STATUS_OK = "OK"
@@ -31,6 +43,8 @@ object CurboxApiContract {
 
 /** Actions a client can run through execute(). Each command's args are documented in CURBOX_API.md. */
 enum class ApiCommand {
+    REGISTER_UNLOCK_CONDITION,
+    REMOVE_UNLOCK_CONDITION,
     START_FOCUS,
     STOP_FOCUS,
     SET_APP_BLOCKER_GROUP,
@@ -40,7 +54,9 @@ enum class ApiCommand {
     SET_UI_HIDER,
     SET_GRAYSCALE_GROUP,
     SET_REEL_COUNTER,
-    SET_DND;
+    SET_DND,
+    /** Since version 6: enable true asks Curbox to keep the caller's companion service bound. */
+    HOST_COMPANION;
 
     companion object {
         fun fromNameOrNull(name: String?): ApiCommand? = entries.firstOrNull { it.name == name }
@@ -64,13 +80,16 @@ enum class ApiState {
  * active focus session.
  */
 enum class ApiList {
+    UNLOCK_CONDITIONS,
     FOCUS_GROUPS,
     APP_BLOCKER_GROUPS,
     KEYWORD_GROUPS,
     GRAYSCALE_GROUPS,
     AUTO_DND_GROUPS,
     UI_HIDER_SCRIPTS,
-    STATUS;
+    STATUS,
+    /** Since version 5: daily app and website totals for the retained days. */
+    USAGE_HISTORY;
 
     companion object {
         fun fromNameOrNull(name: String?): ApiList? = entries.firstOrNull { it.name == name }

@@ -13,6 +13,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
 import neth.iecal.curbox.api.ICurboxApi
 import org.json.JSONArray
@@ -107,6 +108,18 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_list_dnd).setOnClickListener { list("AUTO_DND_GROUPS") }
         findViewById<Button>(R.id.btn_list_uihider).setOnClickListener { list("UI_HIDER_SCRIPTS") }
 
+        findViewById<Button>(R.id.btn_register_condition).setOnClickListener {
+            exec("REGISTER_UNLOCK_CONDITION", Bundle().apply {
+                putString("id", "practice_goal")
+                putString("label", getString(R.string.api_tester_condition_label))
+                putString("activity", "$packageName.SampleRequirementActivity")
+            })
+        }
+        findViewById<Button>(R.id.btn_remove_condition).setOnClickListener {
+            exec("REMOVE_UNLOCK_CONDITION", Bundle().apply { putString("id", "practice_goal") })
+        }
+        findViewById<Button>(R.id.btn_list_conditions).setOnClickListener { list("UNLOCK_CONDITIONS") }
+
         findViewById<Button>(R.id.btn_clear).setOnClickListener { logView.text = "" }
 
         log("Ready. Tap Connect, then Request permission, then run a command.")
@@ -114,17 +127,38 @@ class MainActivity : AppCompatActivity() {
 
     private fun target(): String = targetField.text.toString().trim()
 
-    /** Finds the installed Curbox by its API action, so this works for debug and release builds. */
-    private fun resolveCurbox(): Boolean {
-        if (curboxPackage != null) return true
-        val info = packageManager.resolveService(Intent(actionBind), 0)
-        if (info == null) {
-            log("Could not find the Curbox API. Make sure Curbox is installed and up to date.")
-            return false
+    /** Ask which installation to use when debug and release both expose the API. */
+    private fun withCurbox(action: () -> Unit) {
+        if (curboxPackage != null) {
+            action()
+            return
         }
-        curboxPackage = info.serviceInfo.packageName
-        log("Found Curbox: $curboxPackage")
-        return true
+        val services = packageManager.queryIntentServices(Intent(actionBind), 0)
+            .distinctBy { it.serviceInfo.packageName }
+        if (services.isEmpty()) {
+            log(getString(R.string.api_tester_not_installed))
+            return
+        }
+        fun select(index: Int) {
+            curboxPackage = services[index].serviceInfo.packageName
+            // SampleRequirementActivity only answers checks from this installation.
+            getSharedPreferences(SampleRequirementActivity.PREFS, MODE_PRIVATE).edit()
+                .putString(SampleRequirementActivity.KEY_CURBOX_PACKAGE, curboxPackage).apply()
+            log(getString(R.string.api_tester_selected, curboxPackage))
+            action()
+        }
+        if (services.size == 1) {
+            select(0)
+        } else {
+            val labels = services.map {
+                getString(R.string.api_tester_installation,
+                    it.loadLabel(packageManager), it.serviceInfo.packageName)
+            }.toTypedArray()
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.api_tester_choose_installation)
+                .setItems(labels) { _, index -> select(index) }
+                .show()
+        }
     }
 
     private fun connect() {
@@ -132,19 +166,21 @@ class MainActivity : AppCompatActivity() {
             log("Already connected.")
             return
         }
-        if (!resolveCurbox()) return
-        val intent = Intent(actionBind).setPackage(curboxPackage)
-        val ok = bindService(intent, connection, Context.BIND_AUTO_CREATE)
-        log("bindService requested (returned $ok). Waiting for connection...")
+        withCurbox {
+            val intent = Intent(actionBind).setPackage(curboxPackage)
+            val ok = bindService(intent, connection, Context.BIND_AUTO_CREATE)
+            log("bindService requested (returned $ok). Waiting for connection...")
+        }
     }
 
     private fun requestPermission() {
-        if (!resolveCurbox()) return
-        val intent = Intent(actionRequestPermission).setPackage(curboxPackage)
-        try {
-            permissionLauncher.launch(intent)
-        } catch (e: Exception) {
-            log("Could not open the permission screen: ${e.message}")
+        withCurbox {
+            val intent = Intent(actionRequestPermission).setPackage(curboxPackage)
+            try {
+                permissionLauncher.launch(intent)
+            } catch (e: Exception) {
+                log("Could not open the permission screen: ${e.message}")
+            }
         }
     }
 
@@ -174,7 +210,14 @@ class MainActivity : AppCompatActivity() {
     private fun exec(command: String, args: Bundle) {
         val a = api ?: return notConnected()
         io.execute {
-            val res = runCatching { a.execute(command, args) }.getOrElse { "ERROR: ${it.message}" }
+            val res = runCatching {
+                if (command in listOf("REGISTER_UNLOCK_CONDITION", "REMOVE_UNLOCK_CONDITION") &&
+                    a.apiVersion() < 3) {
+                    getString(R.string.api_tester_requires_v3, curboxPackage)
+                } else {
+                    a.execute(command, args)
+                }
+            }.getOrElse { "ERROR: ${it.message}" }
             log("execute($command) -> $res")
         }
     }
@@ -207,8 +250,8 @@ class MainActivity : AppCompatActivity() {
         io.execute {
             log("================ CURBOX DUMP ================")
             for (kind in listOf(
-                "STATUS", "FOCUS_GROUPS", "APP_BLOCKER_GROUPS", "KEYWORD_GROUPS",
-                "GRAYSCALE_GROUPS", "AUTO_DND_GROUPS", "UI_HIDER_SCRIPTS"
+                "UNLOCK_CONDITIONS", "STATUS", "FOCUS_GROUPS", "APP_BLOCKER_GROUPS", "KEYWORD_GROUPS",
+                "GRAYSCALE_GROUPS", "AUTO_DND_GROUPS", "UI_HIDER_SCRIPTS", "USAGE_HISTORY"
             )) {
                 val res = runCatching { a.list(kind) }.getOrElse { "ERROR: ${it.message}" }
                 log("$kind ->\n${pretty(res)}")

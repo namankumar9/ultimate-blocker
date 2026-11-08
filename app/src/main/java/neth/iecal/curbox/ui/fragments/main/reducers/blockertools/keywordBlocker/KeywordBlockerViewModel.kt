@@ -75,9 +75,14 @@ class KeywordBlockerViewModel(application: Application) : AndroidViewModel(appli
 
     init {
         viewModelScope.launch {
-            dataStoreManager.settings.collectLatest { settings ->
+            dataStoreManager.settingsForEditing.collectLatest { settings ->
                 _keywordBlockerConfig.value = settings.keywordBlockerConfig
-                _temporaryDisableAvailable.value = !settings.settingsChangeDelayConfig2.isEnabled
+            }
+        }
+        viewModelScope.launch {
+            dataStoreManager.settings.collectLatest { settings ->
+                _temporaryDisableAvailable.value = !settings.settingsChangeDelayConfig2.isEnabled &&
+                    !settings.settingsChangeDelayConfig2.requireTamperProtectionOff
             }
         }
     }
@@ -89,9 +94,13 @@ class KeywordBlockerViewModel(application: Application) : AndroidViewModel(appli
     }
     private fun updateConfig(transform: (neth.iecal.curbox.data.models.KeywordBlocker) -> neth.iecal.curbox.data.models.KeywordBlocker) {
         viewModelScope.launch {
-            dataStoreManager.updateKeywordBlockerConfig(transform)
-            requestKeywordBlockerRefresh()
+            persistConfig(transform)
         }
+    }
+
+    private suspend fun persistConfig(transform: (KeywordBlocker) -> KeywordBlocker) {
+        dataStoreManager.updateKeywordBlockerConfig(transform)
+        requestKeywordBlockerRefresh()
     }
 
     fun activateIfNeeded() {
@@ -106,16 +115,24 @@ class KeywordBlockerViewModel(application: Application) : AndroidViewModel(appli
         updateConfig { it.copy(blockAllExceptSupported = enabled) }
     }
 
-    fun addGroup(group: KeywordGroup) {
-        updateConfig { config ->
+    fun addGroup(group: KeywordGroup) = viewModelScope.launch {
+        addGroupAndWait(group)
+    }
+
+    suspend fun addGroupAndWait(group: KeywordGroup) {
+        persistConfig { config ->
             val groups = config.keywordGroups.toMutableList()
             groups.add(group)
             config.copy(keywordGroups = groups)
         }
     }
 
-    fun updateGroupById(group: KeywordGroup) {
-        updateConfig { config ->
+    fun updateGroupById(group: KeywordGroup) = viewModelScope.launch {
+        updateGroupByIdAndWait(group)
+    }
+
+    suspend fun updateGroupByIdAndWait(group: KeywordGroup) {
+        persistConfig { config ->
             val groups = config.keywordGroups.toMutableList()
             val index = groups.indexOfFirst { it.id == group.id }
             if (index != -1) {
@@ -125,8 +142,12 @@ class KeywordBlockerViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun deleteGroup(groupId: String) {
-        updateConfig { config ->
+    fun deleteGroup(groupId: String) = viewModelScope.launch {
+        deleteGroupAndWait(groupId)
+    }
+
+    suspend fun deleteGroupAndWait(groupId: String) {
+        persistConfig { config ->
             val groups = config.keywordGroups.toMutableList()
             groups.removeAll { it.id == groupId }
             config.copy(keywordGroups = groups)

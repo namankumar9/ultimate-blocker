@@ -1,5 +1,6 @@
 package neth.iecal.curbox.ui.fragments.main.reducers.blockertools.shared
 
+import neth.iecal.curbox.api.ExternalUnlockProviders
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -88,6 +89,9 @@ class WarningConfigFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val groups = DataStoreManager(requireContext()).settings.first().manualFocusGroups
             formController.bindFocusGroups(groups)
+            val conditions = DataStoreManager(requireContext()).settings.first().externalUnlockConditions
+                .filter { ExternalUnlockProviders.isAvailable(requireContext(), it) }
+            formController.bindExternalConditions(conditions)
         }
         qrController.bind(config.qrKeys)
         nfcController.bind(config.nfcKeys)

@@ -6,13 +6,13 @@
         android:shortcutShortLabel="@string/focus_mode"
         android:shortcutId="curbox_focus_mode_shortcut"
         android:shortcutLongLabel="@string/focus_mode">
+        <!-- targetPackage must match applicationId; debug builds override this file. -->
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="neth.iecal.curbox"
-            android:targetClass="neth.iecal.curbox.ui.activity.ShortcutActivity" />
-        <categories android:name="digiipaws" />
-        <capability-binding android:key="actions.intent.CREATE_MESSAGE" />
+            android:targetPackage="app.ultimateblocker"
+            android:targetClass="neth.iecal.curbox.ui.activity.FragmentActivity">
+            <extra android:name="tab" android:value="focus" />
+        </intent>
     </shortcut>
     <!-- Specify more shortcuts here. -->
 </shortcuts>
-  

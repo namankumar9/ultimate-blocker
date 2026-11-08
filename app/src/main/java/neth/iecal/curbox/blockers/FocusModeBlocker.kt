@@ -1,12 +1,10 @@
 package neth.iecal.curbox.blockers
 
-import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Context.RECEIVER_EXPORTED
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.Build
+import androidx.core.content.ContextCompat
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import kotlinx.coroutines.CancellationException
@@ -46,6 +44,7 @@ class FocusModeBlocker : BaseBlocker() {
     )
 
     companion object {
+        private const val TIMER_NOTIFICATION_ID = 1002
         const val INTENT_ACTION_REFRESH_FOCUS_MODE = "neth.iecal.curbox.refresh.focus_mode"
         const val INTENT_ACTION_UNSUSPEND_ALL = "neth.iecal.curbox.unsuspend_all_apps"
     }
@@ -269,17 +268,14 @@ class FocusModeBlocker : BaseBlocker() {
         }
     }
 
-    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     fun setupReceivers() {
         val filter = IntentFilter().apply {
             addAction(INTENT_ACTION_REFRESH_FOCUS_MODE)
             addAction(INTENT_ACTION_UNSUSPEND_ALL)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            service.registerReceiver(refreshReceiver, filter, RECEIVER_EXPORTED)
-        } else {
-            service.registerReceiver(refreshReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            service, refreshReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     fun removeReceivers() {
@@ -292,7 +288,7 @@ class FocusModeBlocker : BaseBlocker() {
         crashLogger = CrashLogger(service)
         keywordBlocker.setupBlocker(service, watchSettings = false)
         if (!this::notificationManager.isInitialized) {
-            notificationManager = TimerNotification(service)
+            notificationManager = TimerNotification(service, TIMER_NOTIFICATION_ID)
         }
         if (!this::soundPlayer.isInitialized) {
             soundPlayer = FocusModeSoundPlayer(service)

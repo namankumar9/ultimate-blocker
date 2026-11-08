@@ -49,6 +49,22 @@
                 android:text="Check is granted" />
 
             <Button
+                android:id="@+id/btn_register_condition"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/api_tester_register_condition" />
+            <Button
+                android:id="@+id/btn_remove_condition"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/api_tester_remove_condition" />
+            <Button
+                android:id="@+id/btn_list_conditions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/api_tester_list_conditions" />
+
+            <Button
                 android:id="@+id/btn_dump"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

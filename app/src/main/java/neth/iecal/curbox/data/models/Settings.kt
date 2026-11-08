@@ -1,6 +1,7 @@
 package neth.iecal.curbox.data.models
 
 data class Settings(
+    val externalUnlockConditions: List<ExternalUnlockCondition> = emptyList(),
     val blockedAppGroups: List<AppGroup> = listOf(),
     val manualFocusGroups: List<ManualFocusGroup> = listOf(),
     val autoDndGroups: List<AutoDndGroup> = listOf(),
@@ -16,6 +17,7 @@ data class Settings(
     val keywordBlockerConfig: KeywordBlocker = KeywordBlocker(),
     val isReelCounterOn: Boolean = true,
     val grayscaleGroups: List<GrayscaleGroup> = listOf(),
+    val usageBackgroundArt: String = "",
     val usageTrackerIgnoredApps: List<String> = listOf(),
     val isAppUsageTrackingEnabled: Boolean = true,
     val isWebsiteUsageTrackingEnabled: Boolean = true,
