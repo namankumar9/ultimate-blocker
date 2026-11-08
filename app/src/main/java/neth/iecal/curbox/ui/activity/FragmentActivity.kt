@@ -40,6 +40,12 @@ import neth.iecal.curbox.utils.BlurFadeAnimator
 
 class FragmentActivity : AppCompatActivity() {
 
+    companion object {
+        const val EXTRA_TAB = "tab"
+        const val TAB_FOCUS = "focus"
+    }
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val sharedPreferences = getSharedPreferences("AppPreferences", android.content.Context.MODE_PRIVATE)
         val isFirstLaunchComplete = sharedPreferences.getBoolean("isFirstLaunchComplete", false)
@@ -158,8 +164,10 @@ class FragmentActivity : AppCompatActivity() {
                 neth.iecal.curbox.utils.DonationPrompt.maybeShow(this)
 
                 if (savedInstanceState == null) {
-                    bottomNav.selectedItemId = R.id.nav_usage
-                    showTab(R.id.nav_usage, commitNow = true)
+                    // The launcher "Focus mode" shortcut asks for the focus tab.
+                    val initialTab = if (intent.getStringExtra(EXTRA_TAB) == TAB_FOCUS) R.id.nav_focus else R.id.nav_usage
+                    bottomNav.selectedItemId = initialTab
+                    showTab(initialTab, commitNow = true)
                 }
 
                 bottomNav.setOnItemSelectedListener { item ->

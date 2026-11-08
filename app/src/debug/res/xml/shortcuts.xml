@@ -1,0 +1,18 @@
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutDisabledMessage="@string/focus_mode"
+        android:enabled="true"
+        android:icon="@drawable/ic_launcher_foreground"
+        android:shortcutShortLabel="@string/focus_mode"
+        android:shortcutId="curbox_focus_mode_shortcut"
+        android:shortcutLongLabel="@string/focus_mode">
+        <!-- targetPackage must match applicationId; debug builds override this file. -->
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="app.ultimateblocker.debug"
+            android:targetClass="neth.iecal.curbox.ui.activity.FragmentActivity">
+            <extra android:name="tab" android:value="focus" />
+        </intent>
+    </shortcut>
+    <!-- Specify more shortcuts here. -->
+</shortcuts>
