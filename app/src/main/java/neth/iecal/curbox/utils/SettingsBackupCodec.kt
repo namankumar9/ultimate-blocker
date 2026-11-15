@@ -163,6 +163,9 @@ object SettingsBackupCodec {
                 require(config.reelCount.dailyLimits.size == 7 && config.reelCount.dailyLimits.all { count -> count >= 0 })
             }
         }
+        // Groups link to lists by id, so ids must be usable and unique.
+        require(settings.appLists.all { it.id.isNotBlank() })
+        require(settings.appLists.map { it.id }.toSet().size == settings.appLists.size)
         settings.manualFocusGroups.forEach { requireNotNull(it.blockMode) }
         settings.autoDndGroups.forEach { schedule(it.timeConfig) }
         settings.grayscaleGroups.forEach { schedule(it.timeConfig) }

@@ -15,6 +15,8 @@ import kotlinx.coroutines.withContext
 import neth.iecal.curbox.blockers.AppBlocker
 import neth.iecal.curbox.data.models.AppBlockerWarningScreenConfig
 import neth.iecal.curbox.data.models.AppGroup
+import neth.iecal.curbox.data.models.AppList
+import neth.iecal.curbox.data.models.allPackages
 import neth.iecal.curbox.data.models.AppTimeConfig
 import neth.iecal.curbox.data.models.AppUsageConfig
 import neth.iecal.curbox.utils.DataStoreManager
@@ -41,7 +43,7 @@ class AppBlockerSettingViewModel(application: Application) : AndroidViewModel(ap
         val window = config.schedule.activeWindow() ?: return null
 
         val limitMillis = limitForToday(config.usage) * 60_000L
-        val packages = group.selectedPackages.map { it.trim() }.toSet()
+        val packages = group.allPackages(_appLists.value)
         val used = withContext(Dispatchers.IO) {
             usageStats.getForegroundUsageBetween(
                 packages,
@@ -59,11 +61,14 @@ class AppBlockerSettingViewModel(application: Application) : AndroidViewModel(ap
 
     private val _groups = MutableStateFlow<List<AppGroup>>(emptyList())
     val groups: StateFlow<List<AppGroup>> = _groups
+    private val _appLists = MutableStateFlow<List<AppList>>(emptyList())
+    val appLists: StateFlow<List<AppList>> = _appLists
     private val _temporaryDisableAvailable = MutableStateFlow(true)
     val temporaryDisableAvailable: StateFlow<Boolean> = _temporaryDisableAvailable
     init {
         viewModelScope.launch {
             dataStoreManager.settingsForEditing.collectLatest { settings ->
+                _appLists.value = settings.appLists
                 _groups.value = settings.blockedAppGroups
             }
         }
@@ -115,6 +120,30 @@ class AppBlockerSettingViewModel(application: Application) : AndroidViewModel(ap
         val currentSettings = dataStoreManager.settingsForEditing.first()
         val updatedGroups = currentSettings.blockedAppGroups.filterNot { it.id == groupId }
         persistGroups(updatedGroups)
+    }
+
+    /** Adds the list, or replaces the one with the same id. Removing apps may be delayed. */
+    suspend fun saveAppList(list: AppList) {
+        val current = dataStoreManager.settingsForEditing.first().appLists
+        val updated = if (current.any { it.id == list.id }) {
+            current.map { if (it.id == list.id) list else it }
+        } else current + list
+        dataStoreManager.updateAppLists(updated)
+        requestAppBlockerRefresh()
+    }
+
+    /**
+     * Deletes the list unless a group still links to it. Returns the names of those groups,
+     * empty when the list was deleted. Unlinking happens in each group, where the change
+     * delay already judges it.
+     */
+    suspend fun deleteAppList(listId: String): List<String> {
+        val settings = dataStoreManager.settingsForEditing.first()
+        val users = settings.blockedAppGroups.filter { listId in it.appListIds }.map { it.name }
+        if (users.isNotEmpty()) return users
+        dataStoreManager.updateAppLists(settings.appLists.filterNot { it.id == listId })
+        requestAppBlockerRefresh()
+        return emptyList()
     }
 
     fun updateGroupActiveState(index: Int, isActive: Boolean) {

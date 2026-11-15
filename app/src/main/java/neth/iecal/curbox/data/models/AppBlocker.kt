@@ -4,6 +4,8 @@ data class AppGroup(
     val id: String = "",
     val name: String = "name",
     val selectedPackages: List<String> = listOf(),
+    /** Ids of [AppList]s whose apps this group also blocks. See [allPackages]. */
+    val appListIds: List<String> = listOf(),
     val config: AppGroupConfig? = null,
     val isActive: Boolean = false,
     /** Non-zero only while the group is using the opt-in temporary-disable escape hatch. */

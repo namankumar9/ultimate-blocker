@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import neth.iecal.curbox.R
 import neth.iecal.curbox.data.models.AppGroup
+import neth.iecal.curbox.data.models.allPackages
 import neth.iecal.curbox.ui.activity.FragmentActivity
 import neth.iecal.curbox.utils.TimeTools
 import neth.iecal.curbox.utils.TemporaryDisableDialog
@@ -66,6 +67,12 @@ class AppBlockerGroupsFragment : Fragment() {
         }
 
 
+        view.findViewById<Button>(R.id.btn_app_lists).setOnClickListener {
+            startActivity(Intent(requireContext(), FragmentActivity::class.java).apply {
+                putExtra("fragment", AppListsFragment.FRAGMENT_ID)
+            })
+        }
+
         fabAddGroup.setOnClickListener {
             val intent = Intent(requireContext(), FragmentActivity::class.java).apply {
                 putExtra("fragment", CreateAppGroupFragment.FRAGMENT_ID)
@@ -91,6 +98,12 @@ class AppBlockerGroupsFragment : Fragment() {
                 }
             }
         }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                // App counts include linked lists, which can change while the groups do not.
+                viewModel.appLists.collectLatest { adapter.notifyDataSetChanged() }
+            }
+        }
     }
 
     inner class AppGroupAdapter :
@@ -113,13 +126,14 @@ class AppBlockerGroupsFragment : Fragment() {
             val group = getItem(position)
             holder.tvName.text = group.name
 
+            val appCount = group.allPackages(viewModel.appLists.value).size
             holder.tvDetails.text = group.config?.let { config ->
                 getString(
                     R.string.group_details_apps,
-                    group.selectedPackages.size,
+                    appCount,
                     requireContext().appGroupScheduleSummary(config.schedule)
                 )
-            } ?: getString(R.string.group_details_apps_only, group.selectedPackages.size)
+            } ?: getString(R.string.group_details_apps_only, appCount)
 
             holder.tvRemaining.visibility = View.GONE
             holder.tvRemaining.tag = group.id
@@ -165,7 +179,7 @@ class AppBlockerGroupsFragment : Fragment() {
                 if (pos == RecyclerView.NO_POSITION) return@setOnCheckedChangeListener
                 if (isChecked && !group.isActive) {
                     val conflicts = group.copy(isActive = true)
-                        .scheduleConflictsWith(viewModel.groups.value)
+                        .scheduleConflictsWith(viewModel.groups.value, viewModel.appLists.value)
                     if (conflicts.isNotEmpty()) {
                         holder.switchActive.setOnCheckedChangeListener(null)
                         holder.switchActive.isChecked = false

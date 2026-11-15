@@ -1,5 +1,6 @@
 package neth.iecal.curbox.ui.fragments.main.usage
 
+import neth.iecal.curbox.data.models.resolvedAppGroups
 import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -63,7 +64,7 @@ class AppUsageBreakdown(private val stat: AppUsageStat) : Fragment() {
                 if (settings == null) return@collectLatest
                 binding.dynamicShortcutsContainer.removeAllViews()
 
-                val matchedAppGroups = settings.blockedAppGroups.filter { it.selectedPackages.contains(stat.packageName) }
+                val matchedAppGroups = settings.resolvedAppGroups().filter { it.selectedPackages.contains(stat.packageName) }
                 matchedAppGroups.forEach { group ->
                     addShortcutCard(
                         title = group.name,

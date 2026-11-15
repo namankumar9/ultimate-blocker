@@ -1,5 +1,6 @@
 package neth.iecal.curbox.anti_stimulants
 
+import neth.iecal.curbox.data.models.resolvedAppGroups
 import android.annotation.SuppressLint
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
@@ -142,7 +143,7 @@ class MindfulMessage {
             try {
                 service.dataStoreManager.settings.collectLatest { settings ->
                     config = settings.mindfulMessageConfig
-                    appGroups = settings.blockedAppGroups
+                    appGroups = settings.resolvedAppGroups()
                 }
             } catch (e: CancellationException) {
                 throw e

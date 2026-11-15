@@ -36,6 +36,7 @@ class CreateAppGroupFragment : Fragment() {
     private val binding get() = _binding!!
 
     private var selectedApps: ArrayList<String> = arrayListOf()
+    private var selectedListIds: ArrayList<String> = arrayListOf()
     private var isPrefilled = false
     private var autoAddNewApps = false
     private val viewModel: AppBlockerSettingViewModel by activityViewModels()
@@ -47,6 +48,9 @@ class CreateAppGroupFragment : Fragment() {
             val apps = result.data?.getStringArrayListExtra("SELECTED_APPS")
             if (apps != null) {
                 selectedApps = apps
+                result.data?.getStringArrayListExtra(SelectAppsActivity.EXTRA_APP_LIST_IDS)?.let {
+                    selectedListIds = it
+                }
                 autoAddNewApps = result.data?.getBooleanExtra(SelectAppsActivity.EXTRA_AUTO_ADD_NEW_APPS, false) == true
                 updateSelectAppsButton()
             }
@@ -86,6 +90,7 @@ class CreateAppGroupFragment : Fragment() {
                         binding.textView2.text = getString(R.string.app_group_edit_title)
                         binding.etGroupName.setText(group.name)
                         selectedApps = ArrayList(group.selectedPackages)
+                        selectedListIds = ArrayList(group.appListIds)
                         autoAddNewApps = group.autoAddNewApps
                         updateSelectAppsButton()
 
@@ -147,7 +152,7 @@ class CreateAppGroupFragment : Fragment() {
             return
         }
 
-        if (selectedApps.isEmpty() && !autoAddNewApps) {
+        if (selectedApps.isEmpty() && selectedListIds.isEmpty() && !autoAddNewApps) {
             Toast.makeText(requireContext(), getString(R.string.please_select_at_least_one_app), Toast.LENGTH_SHORT).show()
             return
         }
@@ -167,6 +172,7 @@ class CreateAppGroupFragment : Fragment() {
             id = newGroupId,
             name = name,
             selectedPackages = selectedApps.toList(),
+            appListIds = selectedListIds.toList(),
             config = AppGroupConfig(
                 schedule = viewModel.currentTimeConfig,
                 usage = viewModel.currentUsageConfig
@@ -183,7 +189,7 @@ class CreateAppGroupFragment : Fragment() {
                 else System.currentTimeMillis()
         )
 
-        val conflicts = newGroup.scheduleConflictsWith(viewModel.groups.value)
+        val conflicts = newGroup.scheduleConflictsWith(viewModel.groups.value, viewModel.appLists.value)
         if (!skipConflictCheck && conflicts.isNotEmpty()) {
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.schedule_conflict_title)
@@ -232,14 +238,21 @@ class CreateAppGroupFragment : Fragment() {
             putStringArrayListExtra("PRE_SELECTED_APPS", selectedApps)
             putExtra(SelectAppsActivity.EXTRA_ALLOW_CURBOX, true)
             putExtra(SelectAppsActivity.EXTRA_AUTO_ADD_NEW_APPS, autoAddNewApps)
+            putStringArrayListExtra(SelectAppsActivity.EXTRA_APP_LIST_IDS, selectedListIds)
         }
         selectAppsLauncher.launch(intent)
     }
 
     private fun updateSelectAppsButton() {
-        binding.btnSelectApps.text = getString(
+        val apps = getString(
             if (autoAddNewApps) R.string.select_apps_count_plus_new else R.string.select_apps_count,
             selectedApps.size
+        )
+        binding.btnSelectApps.text = if (selectedListIds.isEmpty()) apps
+        else getString(
+            R.string.select_apps_with_lists,
+            apps,
+            resources.getQuantityString(R.plurals.app_list_count, selectedListIds.size, selectedListIds.size)
         )
     }
 

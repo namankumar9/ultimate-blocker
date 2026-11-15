@@ -4,6 +4,8 @@ import com.google.gson.Gson
 import neth.iecal.curbox.data.models.AppBlockerWarningScreenConfig
 import neth.iecal.curbox.data.models.AppBlockingType
 import neth.iecal.curbox.data.models.AppGroup
+import neth.iecal.curbox.data.models.AppList
+import neth.iecal.curbox.data.models.allPackages
 import neth.iecal.curbox.data.models.AppTimeConfig
 import neth.iecal.curbox.data.models.AppUsageConfig
 import neth.iecal.curbox.data.models.AutoDndGroup
@@ -38,7 +40,12 @@ object RestrictionComparator {
         return try {
             when (field) {
                 GatedSettingsField.APP_GROUPS ->
-                    appGroups(current.blockedAppGroups, proposed.blockedAppGroups)
+                    appGroups(current.blockedAppGroups, proposed.blockedAppGroups,
+                        current.appLists, proposed.appLists)
+                // A list edit is judged by what it does to the groups that use it.
+                GatedSettingsField.APP_LISTS ->
+                    appGroups(current.blockedAppGroups, proposed.blockedAppGroups,
+                        current.appLists, proposed.appLists)
                 GatedSettingsField.AUTO_DND_GROUPS ->
                     autoDndGroups(current.autoDndGroups, proposed.autoDndGroups)
                 GatedSettingsField.REEL_BLOCKER ->
@@ -74,17 +81,24 @@ object RestrictionComparator {
         return timeOk && tamperGateOk
     }
 
-    fun appGroups(old: List<AppGroup>, new: List<AppGroup>): Boolean {
+    fun appGroups(
+        old: List<AppGroup>,
+        new: List<AppGroup>,
+        oldLists: List<AppList> = emptyList(),
+        newLists: List<AppList> = oldLists,
+    ): Boolean {
         return old.filter { it.isActive || it.temporarilyDisabledUntilMs > 0L }.all { o ->
             val n = new.find { it.id == o.id } ?: return@all false
-            appGroup(o, n)
+            appGroup(o, n, oldLists, newLists)
         }
     }
 
-    private fun appGroup(o: AppGroup, n: AppGroup): Boolean {
+    private fun appGroup(o: AppGroup, n: AppGroup, oldLists: List<AppList>, newLists: List<AppList>): Boolean {
         if (!temporaryDisableSameOrShorter(o.isActive, o.temporarilyDisabledUntilMs,
                 n.isActive, n.temporarilyDisabledUntilMs)) return false
-        if (!n.selectedPackages.containsAll(o.selectedPackages)) return false
+        // Apps can come from the group itself or from linked lists. Dropping an app either
+        // way, unlinking a list, or deleting one all shrink this set.
+        if (!n.allPackages(newLists).containsAll(o.allPackages(oldLists))) return false
         // No longer catching new installs lets future apps slip past the group.
         if (o.autoAddNewApps && !n.autoAddNewApps) return false
         if (!warningConfig(o.warningScreenConfig, n.warningScreenConfig)) return false

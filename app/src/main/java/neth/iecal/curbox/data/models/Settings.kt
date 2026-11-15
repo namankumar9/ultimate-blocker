@@ -3,6 +3,7 @@ package neth.iecal.curbox.data.models
 data class Settings(
     val externalUnlockConditions: List<ExternalUnlockCondition> = emptyList(),
     val blockedAppGroups: List<AppGroup> = listOf(),
+    val appLists: List<AppList> = listOf(),
     val manualFocusGroups: List<ManualFocusGroup> = listOf(),
     val autoDndGroups: List<AutoDndGroup> = listOf(),
     /**

@@ -56,6 +56,17 @@
         app:tint="?attr/colorPrimary" />
 
     <Button
+        android:id="@+id/btn_app_lists"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/app_lists_title"
+        app:icon="@drawable/ic_app_list"
+        app:layout_constraintBottom_toBottomOf="@+id/textView"
+        app:layout_constraintEnd_toStartOf="@+id/btn_help"
+        app:layout_constraintTop_toTopOf="@+id/textView" />
+
+    <Button
         android:id="@+id/btn_help"
         style="@style/Widget.Material3.Button.IconButton"
         android:layout_width="50dp"

@@ -1,5 +1,6 @@
 package neth.iecal.curbox.ui.activity
 
+import neth.iecal.curbox.data.models.resolvedAppGroups
 import android.annotation.SuppressLint
 import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import neth.iecal.curbox.R
+import neth.iecal.curbox.data.models.AppList
 import neth.iecal.curbox.databinding.ActivitySelectAppsBinding
 import neth.iecal.curbox.databinding.DialogAddKeywordBinding
 import neth.iecal.curbox.utils.DataStoreManager
@@ -38,8 +40,14 @@ class SelectAppsActivity : AppCompatActivity() {
         const val EXTRA_ALLOW_CURBOX = "ALLOW_CURBOX"
         /** Boolean. When present, shows the "add newly installed apps" checkbox with this state and returns it. */
         const val EXTRA_AUTO_ADD_NEW_APPS = "AUTO_ADD_NEW_APPS"
+        /**
+         * String list of linked app list ids. When present, saved app lists are offered as
+         * rows above the apps, and the checked ids come back under the same key.
+         */
+        const val EXTRA_APP_LIST_IDS = "APP_LIST_IDS"
         private const val VIEW_APP = 0
         private const val VIEW_NEW_INSTALLS = 1
+        private const val VIEW_APP_LIST = 2
     }
 
     private lateinit var binding: ActivitySelectAppsBinding
@@ -49,6 +57,19 @@ class SelectAppsActivity : AppCompatActivity() {
     private var appsAdapter: ApplicationAdapter? = null
     /** Shown only when picking apps for an app-blocker group; null means no "New installs" row. */
     private var newInstallsChecked: Boolean? = null
+    /** Null when this picker does not offer app lists. */
+    private var checkedListIds: LinkedHashSet<String>? = null
+    private var appLists: List<AppList> = emptyList()
+    /** Apps that a checked list already covers. They show as checked and cannot be unticked. */
+    private var coveredByLists: Set<String> = emptySet()
+
+    private fun refreshCoveredApps() {
+        val ids = checkedListIds ?: return
+        coveredByLists = appLists.filter { it.id in ids }.flatMap { it.packages }.toHashSet()
+    }
+
+    private fun isChecked(packageName: String) =
+        packageName in selectedAppList || packageName in coveredByLists
 
     // Unified list of (groupName -> packages) from all blocker types
     private var allGroups: List<Pair<String, Set<String>>> = emptyList()
@@ -67,7 +88,7 @@ class SelectAppsActivity : AppCompatActivity() {
 
         // Check if every app currently in the adapter's list is present in selectedAppList
         allAppsSelected = adapter?.apps?.all { appItem ->
-            selectedAppList.contains(appItem.packageName)
+            isChecked(appItem.packageName)
         } == true
 
         if (allAppsSelected) {
@@ -115,7 +136,8 @@ class SelectAppsActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 val settings = dataStoreManager.settings.first()
                 allGroups = buildList {
-                    settings.blockedAppGroups.forEach { add(it.name to it.selectedPackages.toSet()) }
+                    settings.appLists.forEach { add(it.name to it.packages.toSet()) }
+                    settings.resolvedAppGroups().forEach { add(it.name to it.selectedPackages.toSet()) }
                     settings.manualFocusGroups.forEach { add(it.groupName to it.packages) }
                     settings.grayscaleGroups.forEach { add(it.groupName to it.packages) }
                 }
@@ -190,6 +212,8 @@ class SelectAppsActivity : AppCompatActivity() {
             val currentListAdapter = appsAdapter
             currentListAdapter?.let { adapter ->
                 adapter.apps.forEach { appItem ->
+                    // Apps a checked list covers are not picked one by one.
+                    if (appItem.packageName in coveredByLists) return@forEach
                     if(allAppsSelected) {
                         selectedAppList.remove(appItem.packageName)
                     }
@@ -263,6 +287,11 @@ class SelectAppsActivity : AppCompatActivity() {
             val selectedAppsArrayList = ArrayList(selectedAppList)
             val resultIntent = intent.apply {
                 putStringArrayListExtra("SELECTED_APPS", selectedAppsArrayList)
+                checkedListIds?.let { ids ->
+                    // Drop ids of lists deleted while this screen was open.
+                    val existing = appLists.map(AppList::id).toHashSet()
+                    putStringArrayListExtra(EXTRA_APP_LIST_IDS, ArrayList(ids.filter { it in existing }))
+                }
                 newInstallsChecked?.let { putExtra(EXTRA_AUTO_ADD_NEW_APPS, it) }
             }
             setResult(RESULT_OK, resultIntent)
@@ -277,6 +306,15 @@ class SelectAppsActivity : AppCompatActivity() {
         }
         val adapter = ApplicationAdapter(filteredList, selectedAppList).also { appsAdapter = it }
         binding.appList.adapter = adapter
+        if (intent.hasExtra(EXTRA_APP_LIST_IDS)) {
+            checkedListIds = LinkedHashSet(intent.getStringArrayListExtra(EXTRA_APP_LIST_IDS).orEmpty())
+            lifecycleScope.launch {
+                appLists = dataStoreManager.settingsForEditing.first().appLists
+                refreshCoveredApps()
+                adapter.notifyDataSetChanged()
+                updateSelectAllButton()
+            }
+        }
 
         binding.searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String?): Boolean {
@@ -324,10 +362,17 @@ class SelectAppsActivity : AppCompatActivity() {
         /** False while searching. The row itself only exists when [newInstallsChecked] is set. */
         var showNewInstallsRow = true
         private val hasNewInstallsRow get() = showNewInstallsRow && newInstallsChecked != null
-        private val offset get() = if (hasNewInstallsRow) 1 else 0
+        // List rows hide with the "New installs" row while searching.
+        private val listRowCount get() =
+            if (showNewInstallsRow && checkedListIds != null) appLists.size else 0
+        private val headerCount get() = (if (hasNewInstallsRow) 1 else 0)
+        private val offset get() = headerCount + listRowCount
 
-        override fun getItemViewType(position: Int): Int =
-            if (hasNewInstallsRow && position == 0) VIEW_NEW_INSTALLS else VIEW_APP
+        override fun getItemViewType(position: Int): Int = when {
+            hasNewInstallsRow && position == 0 -> VIEW_NEW_INSTALLS
+            position < offset -> VIEW_APP_LIST
+            else -> VIEW_APP
+        }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
             val inflater = LayoutInflater.from(parent.context)
@@ -335,10 +380,18 @@ class SelectAppsActivity : AppCompatActivity() {
                 val view = inflater.inflate(R.layout.select_apps_new_installs_item, parent, false)
                 return object : RecyclerView.ViewHolder(view) {}
             }
+            if (viewType == VIEW_APP_LIST) {
+                val view = inflater.inflate(R.layout.select_apps_list_item, parent, false)
+                return object : RecyclerView.ViewHolder(view) {}
+            }
             return ApplicationViewHolder(inflater.inflate(R.layout.select_apps_item, parent, false))
         }
 
         override fun onBindViewHolder(viewHolder: RecyclerView.ViewHolder, position: Int) {
+            if (getItemViewType(position) == VIEW_APP_LIST) {
+                bindListRow(viewHolder.itemView, appLists[position - headerCount])
+                return
+            }
             if (viewHolder !is ApplicationViewHolder) {
                 val checkbox = viewHolder.itemView.findViewById<CheckBox>(R.id.checkbox)
                 checkbox.setOnCheckedChangeListener(null)
@@ -366,7 +419,11 @@ class SelectAppsActivity : AppCompatActivity() {
             }
 
             holder.checkbox.setOnCheckedChangeListener(null)
-            holder.checkbox.isChecked = selectedAppList.contains(appItem.packageName)
+            val covered = appItem.packageName in coveredByLists
+            holder.checkbox.isChecked = covered || selectedAppList.contains(appItem.packageName)
+            holder.checkbox.isEnabled = !covered
+            holder.itemView.isEnabled = !covered
+            holder.itemView.alpha = if (covered) 0.6f else 1f
 
             holder.checkbox.setOnCheckedChangeListener { _, isChecked ->
                 if (isChecked) {
@@ -383,6 +440,28 @@ class SelectAppsActivity : AppCompatActivity() {
         }
 
         override fun getItemCount(): Int = apps.size + offset
+
+        @SuppressLint("NotifyDataSetChanged")
+        private fun bindListRow(row: View, list: AppList) {
+            val ids = checkedListIds ?: return
+            row.findViewById<TextView>(R.id.list_name).text = list.name
+            row.findViewById<TextView>(R.id.list_details).text = resources.getQuantityString(
+                R.plurals.app_list_app_count, list.packages.size, list.packages.size
+            )
+            val checkbox = row.findViewById<CheckBox>(R.id.checkbox)
+            checkbox.setOnCheckedChangeListener(null)
+            checkbox.isChecked = list.id in ids
+            checkbox.setOnCheckedChangeListener { _, checked ->
+                if (checked) ids.add(list.id) else ids.remove(list.id)
+                refreshCoveredApps()
+                // Rebind after this click finishes, so the covered apps update.
+                row.post {
+                    notifyDataSetChanged()
+                    updateSelectAllButton()
+                }
+            }
+            row.setOnClickListener { checkbox.isChecked = !checkbox.isChecked }
+        }
 
         @SuppressLint("NotifyDataSetChanged")
         fun updateData(newList: List<AppItem>) {

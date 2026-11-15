@@ -54,6 +54,7 @@ object SettingsChangeDelayUtils {
         return context.getString(
             when (field) {
                 GatedSettingsField.APP_GROUPS -> R.string.change_delay_field_app_groups
+                GatedSettingsField.APP_LISTS -> R.string.change_delay_field_app_lists
                 GatedSettingsField.AUTO_DND_GROUPS -> R.string.change_delay_field_auto_dnd
                 GatedSettingsField.REEL_BLOCKER -> R.string.change_delay_field_reel_blocker
                 GatedSettingsField.KEYWORD_BLOCKER -> R.string.change_delay_field_keyword_blocker

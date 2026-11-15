@@ -1,5 +1,6 @@
 package neth.iecal.curbox.blockers
 
+import neth.iecal.curbox.data.models.resolvedAppGroups
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -250,7 +251,7 @@ class AppBlocker : BaseBlocker() {
                 Log.d("AppBlocker", "Settings updated, groups count: ${settings.blockedAppGroups.size}")
 
                 val newBlockedAppsList = ConcurrentHashMap<String, MutableList<AppGroupEntry>>()
-                settings.blockedAppGroups.upgradeLegacyAppGroupConfigs().forEach { group ->
+                settings.resolvedAppGroups().upgradeLegacyAppGroupConfigs().forEach { group ->
                     if (!group.isActive) return@forEach
 
                     try {

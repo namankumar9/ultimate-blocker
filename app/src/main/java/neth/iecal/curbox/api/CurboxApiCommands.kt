@@ -1,5 +1,6 @@
 package neth.iecal.curbox.api
 
+import neth.iecal.curbox.data.models.resolvedAppGroups
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -259,7 +260,7 @@ object CurboxApiCommands {
                 )
             }
 
-            ApiList.APP_BLOCKER_GROUPS -> settings.blockedAppGroups.map { g ->
+            ApiList.APP_BLOCKER_GROUPS -> settings.resolvedAppGroups().map { g ->
                 linkedMapOf(
                     "id" to g.id,
                     "name" to g.name,

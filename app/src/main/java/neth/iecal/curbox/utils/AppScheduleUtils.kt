@@ -1,5 +1,7 @@
 package neth.iecal.curbox.utils
 
+import neth.iecal.curbox.data.models.AppList
+import neth.iecal.curbox.data.models.allPackages
 import neth.iecal.curbox.data.models.AppGroup
 import neth.iecal.curbox.data.models.AppTimeConfig
 import neth.iecal.curbox.data.models.TimeInterval
@@ -35,17 +37,18 @@ fun AppTimeConfig.overlaps(other: AppTimeConfig): Boolean {
     }
 }
 
-fun AppGroup.scheduleConflictsWith(groups: List<AppGroup>): List<AppGroupScheduleConflict> {
+fun AppGroup.scheduleConflictsWith(
+    groups: List<AppGroup>,
+    lists: List<AppList> = emptyList(),
+): List<AppGroupScheduleConflict> {
     if (!isActive) return emptyList()
     val schedule = config?.schedule ?: return emptyList()
-    val packages = selectedPackages.map(String::trim).filter(String::isNotEmpty).toSet()
+    val packages = allPackages(lists)
 
     return groups.mapNotNull { other ->
         if (other.id == id || !other.isActive) return@mapNotNull null
         val otherSchedule = other.config?.schedule ?: return@mapNotNull null
-        val sharedPackages = packages.intersect(
-            other.selectedPackages.map(String::trim).filter(String::isNotEmpty).toSet()
-        )
+        val sharedPackages = packages.intersect(other.allPackages(lists))
         if (sharedPackages.isEmpty() || !schedule.overlaps(otherSchedule)) {
             null
         } else {

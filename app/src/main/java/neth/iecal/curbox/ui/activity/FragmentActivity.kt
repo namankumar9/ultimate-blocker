@@ -98,6 +98,7 @@ class FragmentActivity : AppCompatActivity() {
             AccessibilityGuide.FRAGMENT_ID,
             AppBlockerGroupsFragment.FRAGMENT_ID,
             CreateAppGroupFragment.FRAGMENT_ID,
+            neth.iecal.curbox.ui.fragments.main.reducers.blockertools.appBlocker.AppListsFragment.FRAGMENT_ID,
             ReelBlockerFragment.FRAGMENT_ID,
             AutoDndFragment.FRAGMENT_ID,
             CreateAutoDndGroupFragment.FRAGMENT_ID,
@@ -122,6 +123,8 @@ class FragmentActivity : AppCompatActivity() {
                     OnboardingFragment.FRAGMENT_ID -> OnboardingFragment()
                     AppBlockerGroupsFragment.FRAGMENT_ID -> AppBlockerGroupsFragment()
                     CreateAppGroupFragment.FRAGMENT_ID -> CreateAppGroupFragment()
+                    neth.iecal.curbox.ui.fragments.main.reducers.blockertools.appBlocker.AppListsFragment.FRAGMENT_ID ->
+                        neth.iecal.curbox.ui.fragments.main.reducers.blockertools.appBlocker.AppListsFragment()
                     ReelBlockerFragment.FRAGMENT_ID -> ReelBlockerFragment()
                     KeywordBlockerFragment.FRAGMENT_ID -> KeywordBlockerFragment()
                     CreateKeywordGroupFragment.FRAGMENT_ID -> CreateKeywordGroupFragment()

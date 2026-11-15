@@ -199,6 +199,10 @@ class DataStoreManager(private val context: Context) {
         updateGated(GatedSettingsField.APP_GROUPS) { newGroups }
     }
 
+    suspend fun updateAppLists(newLists: List<neth.iecal.curbox.data.models.AppList>) {
+        updateGated(GatedSettingsField.APP_LISTS) { newLists }
+    }
+
     /**
      * Adds newly installed apps to every app group that opted into [AppGroup.autoAddNewApps].
      *
@@ -296,6 +300,7 @@ class DataStoreManager(private val context: Context) {
             // restored to its local value and considered independently below.
             var updated = remoteWithLocalRuntime.copy(
                 blockedAppGroups = current.blockedAppGroups,
+                appLists = current.appLists,
                 manualFocusGroups = current.manualFocusGroups,
                 autoDndGroups = current.autoDndGroups,
                 activeManualFocusGroupId = current.activeManualFocusGroupId,
@@ -748,6 +753,9 @@ class DataStoreManager(private val context: Context) {
                         object : TypeToken<List<AppGroup>>() {}.type
                     ).upgradeLegacyAppGroupConfigs(gson)
                 )
+                GatedSettingsField.APP_LISTS -> settings.copy(
+                    appLists = gson.fromJson(valueJson, object : TypeToken<List<neth.iecal.curbox.data.models.AppList>>() {}.type)
+                )
                 GatedSettingsField.AUTO_DND_GROUPS -> settings.copy(
                     autoDndGroups = gson.fromJson(valueJson, object : TypeToken<List<neth.iecal.curbox.data.models.AutoDndGroup>>() {}.type)
                 )
@@ -795,6 +803,7 @@ class DataStoreManager(private val context: Context) {
         runCatching {
             val value: Any = when (field) {
                 GatedSettingsField.APP_GROUPS -> settings.blockedAppGroups
+                GatedSettingsField.APP_LISTS -> settings.appLists
                 GatedSettingsField.AUTO_DND_GROUPS -> settings.autoDndGroups
                 GatedSettingsField.REEL_BLOCKER -> settings.reelBlockerConfig
                 GatedSettingsField.KEYWORD_BLOCKER -> settings.keywordBlockerConfig
