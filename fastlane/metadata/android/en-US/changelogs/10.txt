@@ -1,0 +1,9 @@
+NEW:
+• Urge Surfing: tap "I'm struggling" on a block screen to ride out a craving. It is also offered after 3 unlocks in a row.
+• Sip & Stretch: take short breaks to drink water and move. Apps stay blocked during the break.
+• Scheduled Notifications: get your notifications together at set times, not all day long.
+• Added Waterfox browser support.
+• API: read the details of focus groups.
+
+IMPROVEMENTS:
+• Much smaller download.
