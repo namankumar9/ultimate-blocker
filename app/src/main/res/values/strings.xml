@@ -687,6 +687,8 @@
     <string name="select_apps_with_lists">%1$s + %2$s</string>
     <string name="app_lists_title">App lists</string>
     <string name="app_lists_desc">Name a set of apps once, then pick it in any app group. Changing a list changes every group that uses it. Removing apps from a list in use is a loosening, so the settings change delay applies.</string>
+    <string name="app_lists_none_chosen">None chosen. Tap to pick lists.</string>
+    <string name="app_lists_choose_title">Choose app lists</string>
     <string name="app_lists_empty">No app lists yet. Tap + to make one.</string>
     <string name="app_list_add">New app list</string>
     <string name="app_list_name_hint">List name</string>

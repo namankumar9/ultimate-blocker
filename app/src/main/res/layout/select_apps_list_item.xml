@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- An app list row in the app picker. Checking it links the whole list to the group. -->
+<!-- The single "App lists" row in the app picker. Tapping it opens a checklist of saved lists. -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -48,11 +48,13 @@
                 android:textSize="13sp" />
         </LinearLayout>
 
-        <com.google.android.material.checkbox.MaterialCheckBox
-            android:id="@+id/checkbox"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="4dp" />
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginEnd="8dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_chevron_down"
+            app:tint="?attr/colorOnSecondaryContainer" />
 
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

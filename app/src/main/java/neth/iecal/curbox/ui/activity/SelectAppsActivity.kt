@@ -311,7 +311,7 @@ class SelectAppsActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 appLists = dataStoreManager.settingsForEditing.first().appLists
                 refreshCoveredApps()
-                adapter.notifyDataSetChanged()
+                adapter.updateData(sortSelectedItemsToTop(appItemList))
                 updateSelectAllButton()
             }
         }
@@ -340,8 +340,9 @@ class SelectAppsActivity : AppCompatActivity() {
     }
 
     fun sortSelectedItemsToTop(appItemList: List<AppItem>): List<AppItem> {
+        // Apps a ticked list covers count as ticked, so they sort to the top too.
         return appItemList.sortedWith(compareBy<AppItem> {
-            !selectedAppList.contains(it.packageName)
+            !isChecked(it.packageName)
         }.thenBy {
             it.displayName.lowercase()
         })
@@ -363,8 +364,9 @@ class SelectAppsActivity : AppCompatActivity() {
         var showNewInstallsRow = true
         private val hasNewInstallsRow get() = showNewInstallsRow && newInstallsChecked != null
         // List rows hide with the "New installs" row while searching.
+        // One "App lists" row, shown only when this picker offers lists and some exist.
         private val listRowCount get() =
-            if (showNewInstallsRow && checkedListIds != null) appLists.size else 0
+            if (showNewInstallsRow && checkedListIds != null && appLists.isNotEmpty()) 1 else 0
         private val headerCount get() = (if (hasNewInstallsRow) 1 else 0)
         private val offset get() = headerCount + listRowCount
 
@@ -389,7 +391,7 @@ class SelectAppsActivity : AppCompatActivity() {
 
         override fun onBindViewHolder(viewHolder: RecyclerView.ViewHolder, position: Int) {
             if (getItemViewType(position) == VIEW_APP_LIST) {
-                bindListRow(viewHolder.itemView, appLists[position - headerCount])
+                bindListRow(viewHolder.itemView)
                 return
             }
             if (viewHolder !is ApplicationViewHolder) {
@@ -441,35 +443,47 @@ class SelectAppsActivity : AppCompatActivity() {
 
         override fun getItemCount(): Int = apps.size + offset
 
-        @SuppressLint("NotifyDataSetChanged")
-        private fun bindListRow(row: View, list: AppList) {
+        private fun bindListRow(row: View) {
             val ids = checkedListIds ?: return
-            row.findViewById<TextView>(R.id.list_name).text = list.name
-            row.findViewById<TextView>(R.id.list_details).text = resources.getQuantityString(
-                R.plurals.app_list_app_count, list.packages.size, list.packages.size
-            )
-            val checkbox = row.findViewById<CheckBox>(R.id.checkbox)
-            checkbox.setOnCheckedChangeListener(null)
-            checkbox.isChecked = list.id in ids
-            checkbox.setOnCheckedChangeListener { _, checked ->
-                if (checked) ids.add(list.id) else ids.remove(list.id)
-                refreshCoveredApps()
-                // Rebind after this click finishes, so the covered apps update.
-                row.post {
-                    notifyDataSetChanged()
-                    updateSelectAllButton()
-                }
-            }
-            row.setOnClickListener { checkbox.isChecked = !checkbox.isChecked }
+            val chosen = appLists.filter { it.id in ids }
+            row.findViewById<TextView>(R.id.list_name).setText(R.string.app_lists_title)
+            row.findViewById<TextView>(R.id.list_details).text =
+                if (chosen.isEmpty()) getString(R.string.app_lists_none_chosen)
+                else chosen.joinToString(", ") { it.name }
+            row.setOnClickListener { chooseAppLists() }
         }
 
         @SuppressLint("NotifyDataSetChanged")
         fun updateData(newList: List<AppItem>) {
-            apps = newList
+            // Refill the list in place: search filters this same list, so replacing it
+            // would leave search editing a list the adapter no longer shows.
+            (apps as? MutableList<AppItem>)?.let { it.clear(); it.addAll(newList) } ?: run { apps = newList }
             notifyDataSetChanged()
         }
     }
 
+
+    /** A checklist of every saved app list. Ticking one covers all of its apps. */
+    @SuppressLint("NotifyDataSetChanged")
+    private fun chooseAppLists() {
+        val ids = checkedListIds ?: return
+        val names = appLists.map { list ->
+            "${list.name} (${resources.getQuantityString(R.plurals.app_list_app_count, list.packages.size, list.packages.size)})"
+        }.toTypedArray()
+        val checked = appLists.map { it.id in ids }.toBooleanArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.app_lists_choose_title)
+            .setMultiChoiceItems(names, checked) { _, which, isChecked -> checked[which] = isChecked }
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                ids.clear()
+                appLists.forEachIndexed { i, list -> if (checked[i]) ids.add(list.id) }
+                refreshCoveredApps()
+                appsAdapter?.updateData(sortSelectedItemsToTop(appItemList))
+                updateSelectAllButton()
+            }
+            .show()
+    }
 
     data class AppItem(
         val packageName: String,
