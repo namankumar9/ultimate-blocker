@@ -5,6 +5,7 @@ import neth.iecal.curbox.data.models.AppBlockerWarningScreenConfig
 import neth.iecal.curbox.data.models.AppBlockingType
 import neth.iecal.curbox.data.models.AppGroup
 import neth.iecal.curbox.data.models.AppList
+import neth.iecal.curbox.data.models.BlockedActivity
 import neth.iecal.curbox.data.models.allPackages
 import neth.iecal.curbox.data.models.AppTimeConfig
 import neth.iecal.curbox.data.models.AppUsageConfig
@@ -107,7 +108,13 @@ object RestrictionComparator {
                 n.isActive, n.temporarilyDisabledUntilMs)) return false
         // Apps can come from the group itself or from linked lists. Dropping an app either
         // way, unlinking a list, or deleting one all shrink this set.
-        if (!n.allPackages(newLists).containsAll(o.allPackages(oldLists))) return false
+        val newPackages = n.allPackages(newLists)
+        if (!newPackages.containsAll(o.allPackages(oldLists))) return false
+        // Each blocked activity must stay blocked, on its own or because its whole app now is.
+        val newActivities = n.selectedActivities.mapNotNull(BlockedActivity::parse).toHashSet()
+        if (!o.selectedActivities.mapNotNull(BlockedActivity::parse).all {
+                it in newActivities || it.packageName in newPackages
+            }) return false
         // No longer catching new installs lets future apps slip past the group.
         if (o.autoAddNewApps && !n.autoAddNewApps) return false
         if (!warningConfig(o.warningScreenConfig, n.warningScreenConfig)) return false

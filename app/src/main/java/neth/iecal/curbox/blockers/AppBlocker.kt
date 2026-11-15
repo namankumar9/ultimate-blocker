@@ -24,6 +24,7 @@ import neth.iecal.curbox.data.models.AppBlockerWarningScreenConfig
 import neth.iecal.curbox.data.models.AppGroupConfig
 import neth.iecal.curbox.data.models.AppUsageConfig
 import neth.iecal.curbox.data.models.upgradeLegacyAppGroupConfigs
+import neth.iecal.curbox.data.models.partialActivities
 import neth.iecal.curbox.services.BaseBlockingService
 import neth.iecal.curbox.ui.activity.WarningActivity
 import neth.iecal.curbox.utils.AppSuspendHelper
@@ -56,6 +57,7 @@ class AppBlocker : BaseBlocker() {
         const val INTENT_ACTION_WARNING_SCREEN_VISIBILITY =
             "neth.iecal.curbox.appblocker.warning_screen_visibility"
         const val EXTRA_WARNING_SCREEN_VISIBLE = "warning_screen_visible"
+        private val ACTIVITY_RECHECK_DELAYS_MS = longArrayOf(400L, 1_000L, 2_500L)
         private const val TARGET_EVENTS_MASK = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
     }
 
@@ -75,6 +77,19 @@ class AppBlocker : BaseBlocker() {
     )
 
     private val blockedAppsList = ConcurrentHashMap<String, MutableList<AppGroupEntry>>()
+
+    /** A single blocked activity: follows its group's schedule and warning screen only. */
+    private data class ActivityEntry(
+        val groupId: String,
+        val config: AppGroupConfig,
+        val warningConfig: AppBlockerWarningScreenConfig
+    )
+
+    // "package/ActivityClass" -> groups blocking that activity
+    private val blockedActivitiesList = ConcurrentHashMap<String, MutableList<ActivityEntry>>()
+
+    // Last activity seen in front for each app, so time-based rechecks know the current screen.
+    private val lastActivityByPackage = ConcurrentHashMap<String, String>()
     // Holds the warning config last shown per group, used for the cooldown intent's default duration.
     private val appBlockerWarningScrnConfgs = ConcurrentHashMap<String, AppBlockerWarningScreenConfig>()
 
@@ -105,6 +120,17 @@ class AppBlocker : BaseBlocker() {
         ) {
             isWarningScreenVisible = true
             return
+        }
+
+        // Screens inside an already open app arrive as window changes with the same package,
+        // so blocked activities are checked before the same-package shortcut below.
+        val className = event.className?.toString()
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && className != null &&
+            !ignoredApps.contains(packageName)
+        ) {
+            // Framework classes are dialogs and popups shown over an activity, not the activity.
+            if (!className.startsWith("android.")) lastActivityByPackage[packageName] = className
+            if (blockActivityIfNeeded(packageName, className)) return
         }
 
         if (lastPackage == packageName || ignoredApps.contains(packageName)) {
@@ -195,6 +221,38 @@ class AppBlocker : BaseBlocker() {
         lastPackage = packageName
     }
 
+    /** Shows the group's warning screen when [className] is a blocked activity in force now. */
+    private fun blockActivityIfNeeded(packageName: String, className: String, attempt: Int = 0): Boolean {
+        val entries = blockedActivitiesList["$packageName/$className"] ?: return false
+        if (!service.isActivePackage(packageName)) {
+            // The activity's window event can arrive before Android makes its window the active
+            // one, and it is not sent again, so look again a few times while the switch settles.
+            // Events from a screen already sent home stay ignored: by then it never gets active.
+            ACTIVITY_RECHECK_DELAYS_MS.getOrNull(attempt)?.let { delay ->
+                handler.postDelayed({
+                    if (lastActivityByPackage[packageName] == className) {
+                        blockActivityIfNeeded(packageName, className, attempt + 1)
+                    }
+                }, delay)
+            }
+            return false
+        }
+        val now = System.currentTimeMillis()
+        for (entry in entries) {
+            if (isGroupInCooldown(entry.groupId, now)) continue
+            if (entry.config.schedule.activeWindow(now) == null) {
+                entry.config.schedule.nextChangeAfter(now)?.let { nextChange ->
+                    setUpForcedRefreshChecker("activity:${entry.groupId}:$packageName/$className", nextChange)
+                }
+                continue
+            }
+            // Only this screen is blocked, so the rest of the app keeps running.
+            showWarningScreen(packageName, entry.groupId, entry.warningConfig, forceStop = false)
+            return true
+        }
+        return false
+    }
+
     /**
      * An on-each-open unlock lasts only while the user stays within that group's selected apps.
      */
@@ -251,6 +309,7 @@ class AppBlocker : BaseBlocker() {
                 Log.d("AppBlocker", "Settings updated, groups count: ${settings.blockedAppGroups.size}")
 
                 val newBlockedAppsList = ConcurrentHashMap<String, MutableList<AppGroupEntry>>()
+                val newBlockedActivities = ConcurrentHashMap<String, MutableList<ActivityEntry>>()
                 settings.resolvedAppGroups().upgradeLegacyAppGroupConfigs().forEach { group ->
                     if (!group.isActive) return@forEach
 
@@ -266,6 +325,10 @@ class AppBlocker : BaseBlocker() {
                         groupPackages.forEach { pkg ->
                             newBlockedAppsList.getOrPut(pkg) { mutableListOf() }.add(entry)
                         }
+                        group.partialActivities(settings.appLists).forEach { activity ->
+                            newBlockedActivities.getOrPut(activity.key) { mutableListOf() }
+                                .add(ActivityEntry(group.id, config, group.warningScreenConfig))
+                        }
                     } catch (e: Exception) {
                         Log.e("AppBlocker", "Error loading group ${group.name}", e)
                     }
@@ -274,6 +337,8 @@ class AppBlocker : BaseBlocker() {
                 // Atomic-like update of the maps
                 blockedAppsList.clear()
                 blockedAppsList.putAll(newBlockedAppsList)
+                blockedActivitiesList.clear()
+                blockedActivitiesList.putAll(newBlockedActivities)
 
                 Log.d("AppBlocker", "Loaded ${blockedAppsList.size} scheduled usage apps")
                 
@@ -287,6 +352,7 @@ class AppBlocker : BaseBlocker() {
                             // Construct a dummy event to trigger the check
                             val dummyEvent = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
                             dummyEvent.packageName = currentPackage
+                            dummyEvent.className = lastActivityByPackage[currentPackage]
                             doAppBlockerCheck(dummyEvent)
                             dummyEvent.recycle()
                         }
@@ -402,6 +468,7 @@ class AppBlocker : BaseBlocker() {
                     lastPackage = ""
                     val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
                     event.packageName = currentPackage
+                    event.className = lastActivityByPackage[currentPackage]
                     doAppBlockerCheck(event)
                     event.recycle()
                 }
@@ -422,7 +489,12 @@ class AppBlocker : BaseBlocker() {
         handler.postDelayed(runnable, delayMillis)
     }
 
-    private fun showWarningScreen(packageName: String, groupId: String, warningConfig: AppBlockerWarningScreenConfig) {
+    private fun showWarningScreen(
+        packageName: String,
+        groupId: String,
+        warningConfig: AppBlockerWarningScreenConfig,
+        forceStop: Boolean = true
+    ) {
         if (service.isDelayOver(1000)) {
 
             // Remember the warning that was shown so the cooldown intent can read its default duration
@@ -434,7 +506,7 @@ class AppBlocker : BaseBlocker() {
             lastPackage = ""
 
             try {
-                if (packageName != service.packageName && AppSuspendHelper.isShizukuAvailable()) {
+                if (forceStop && packageName != service.packageName && AppSuspendHelper.isShizukuAvailable()) {
                     ShizukuRunner.executeCommand(
                         "am force-stop $packageName",
                         object : ShizukuRunner.CommandResultListener {})

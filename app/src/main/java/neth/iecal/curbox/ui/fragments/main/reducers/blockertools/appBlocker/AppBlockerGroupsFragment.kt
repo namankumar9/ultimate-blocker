@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 import neth.iecal.curbox.R
 import neth.iecal.curbox.data.models.AppGroup
 import neth.iecal.curbox.data.models.allPackages
+import neth.iecal.curbox.data.models.partialActivities
 import neth.iecal.curbox.ui.activity.FragmentActivity
 import neth.iecal.curbox.utils.TimeTools
 import neth.iecal.curbox.utils.TemporaryDisableDialog
@@ -127,13 +128,23 @@ class AppBlockerGroupsFragment : Fragment() {
             holder.tvName.text = group.name
 
             val appCount = group.allPackages(viewModel.appLists.value).size
-            holder.tvDetails.text = group.config?.let { config ->
+            val activityCount = group.partialActivities(viewModel.appLists.value).size
+            val details = group.config?.let { config ->
                 getString(
                     R.string.group_details_apps,
                     appCount,
                     requireContext().appGroupScheduleSummary(config.schedule)
                 )
             } ?: getString(R.string.group_details_apps_only, appCount)
+            // "3 Apps • All day" becomes "3 Apps + 2 activities • All day".
+            holder.tvDetails.text = if (activityCount == 0) details else details.replaceFirst(
+                getString(R.string.group_details_apps_only, appCount),
+                getString(
+                    R.string.select_apps_activities_part,
+                    getString(R.string.group_details_apps_only, appCount),
+                    resources.getQuantityString(R.plurals.activity_count, activityCount, activityCount)
+                )
+            )
 
             holder.tvRemaining.visibility = View.GONE
             holder.tvRemaining.tag = group.id

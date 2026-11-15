@@ -81,6 +81,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.activity.SelectActivitiesActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".nfc.NfcTriggerActivity"
             android:exported="true"
             android:excludeFromRecents="true"

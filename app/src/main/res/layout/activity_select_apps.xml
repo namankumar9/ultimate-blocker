@@ -75,6 +75,16 @@
                     android:theme="@style/Theme.Material3.DayNight" />
             </com.google.android.material.card.MaterialCardView>
 
+            <TextView
+                android:id="@+id/hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginHorizontal="8dp"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="13sp"
+                android:visibility="gone" />
+
         </LinearLayout>
     </com.google.android.material.appbar.AppBarLayout>
 

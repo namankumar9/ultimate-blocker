@@ -687,6 +687,23 @@
     <string name="select_apps_with_lists">%1$s + %2$s</string>
     <string name="app_lists_title">App lists</string>
     <string name="app_lists_desc">Name a set of apps once, then pick it in any app group. Changing a list changes every group that uses it. Removing apps from a list in use is a loosening, so the settings change delay applies.</string>
+    <string name="activities_long_press_hint">Long-press an app to block only some of its screens (activities).</string>
+    <string name="activities_picker_hint">Tick the screens (activities) to block. They follow this group\'s active hours and warning screen; the usage limit does not apply to them. Apps that show everything in one screen cannot be blocked this way.</string>
+    <string name="activities_search_hint">Search activities…</string>
+    <string name="activities_none_found">This app has no activities that can be listed.</string>
+    <string name="select_apps_activities_part">%1$s + %2$s</string>
+    <plurals name="activities_blocked">
+        <item quantity="one">%d activity blocked</item>
+        <item quantity="other">%d activities blocked</item>
+    </plurals>
+    <plurals name="activities_blocked_whole_app">
+        <item quantity="one">%d activity (whole app is blocked anyway)</item>
+        <item quantity="other">%d activities (whole app is blocked anyway)</item>
+    </plurals>
+    <plurals name="activity_count">
+        <item quantity="one">%d activity</item>
+        <item quantity="other">%d activities</item>
+    </plurals>
     <string name="app_lists_none_chosen">None chosen. Tap to pick lists.</string>
     <string name="app_lists_choose_title">Choose app lists</string>
     <string name="app_lists_empty">No app lists yet. Tap + to make one.</string>

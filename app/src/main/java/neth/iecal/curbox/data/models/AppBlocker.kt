@@ -6,6 +6,12 @@ data class AppGroup(
     val selectedPackages: List<String> = listOf(),
     /** Ids of [AppList]s whose apps this group also blocks. See [allPackages]. */
     val appListIds: List<String> = listOf(),
+    /**
+     * Single activities (screens) blocked without blocking their whole app, each as
+     * "package/ActivityClass". They follow the group's schedule and warning screen only;
+     * the usage limit does not apply to them. See [BlockedActivity].
+     */
+    val selectedActivities: List<String> = listOf(),
     val config: AppGroupConfig? = null,
     val isActive: Boolean = false,
     /** Non-zero only while the group is using the opt-in temporary-disable escape hatch. */

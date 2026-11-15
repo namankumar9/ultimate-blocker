@@ -2,6 +2,7 @@ package neth.iecal.curbox.ui.activity
 
 import neth.iecal.curbox.data.models.resolvedAppGroups
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
 import android.os.Bundle
@@ -45,6 +46,11 @@ class SelectAppsActivity : AppCompatActivity() {
          * rows above the apps, and the checked ids come back under the same key.
          */
         const val EXTRA_APP_LIST_IDS = "APP_LIST_IDS"
+        /**
+         * String list of blocked activities ("package/ActivityClass"). When present, long-pressing
+         * an app opens its activities to block one by one; the result comes back under this key.
+         */
+        const val EXTRA_SELECTED_ACTIVITIES = "SELECTED_ACTIVITIES"
         private const val VIEW_APP = 0
         private const val VIEW_NEW_INSTALLS = 1
         private const val VIEW_APP_LIST = 2
@@ -59,6 +65,35 @@ class SelectAppsActivity : AppCompatActivity() {
     private var newInstallsChecked: Boolean? = null
     /** Null when this picker does not offer app lists. */
     private var checkedListIds: LinkedHashSet<String>? = null
+    /** Null when this picker does not offer activity blocking. */
+    private var selectedActivities: LinkedHashSet<String>? = null
+
+    private fun activityCount(packageName: String) =
+        selectedActivities?.count { it.substringBefore('/') == packageName } ?: 0
+
+    @SuppressLint("NotifyDataSetChanged")
+    private val pickActivities = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val data = result.data ?: return@registerForActivityResult
+        if (result.resultCode != RESULT_OK) return@registerForActivityResult
+        val pkg = data.getStringExtra(SelectActivitiesActivity.EXTRA_PACKAGE) ?: return@registerForActivityResult
+        val chosen = selectedActivities ?: return@registerForActivityResult
+        chosen.removeAll { it.substringBefore('/') == pkg }
+        chosen.addAll(data.getStringArrayListExtra(SelectActivitiesActivity.EXTRA_ACTIVITIES).orEmpty())
+        appsAdapter?.notifyDataSetChanged()
+    }
+
+    private fun openActivities(packageName: String) {
+        val chosen = selectedActivities ?: return
+        pickActivities.launch(Intent(this, SelectActivitiesActivity::class.java).apply {
+            putExtra(SelectActivitiesActivity.EXTRA_PACKAGE, packageName)
+            putStringArrayListExtra(
+                SelectActivitiesActivity.EXTRA_ACTIVITIES,
+                ArrayList(chosen.filter { it.substringBefore('/') == packageName })
+            )
+        })
+    }
     private var appLists: List<AppList> = emptyList()
     /** Apps that a checked list already covers. They show as checked and cannot be unticked. */
     private var coveredByLists: Set<String> = emptySet()
@@ -293,6 +328,7 @@ class SelectAppsActivity : AppCompatActivity() {
                     putStringArrayListExtra(EXTRA_APP_LIST_IDS, ArrayList(ids.filter { it in existing }))
                 }
                 newInstallsChecked?.let { putExtra(EXTRA_AUTO_ADD_NEW_APPS, it) }
+                selectedActivities?.let { putStringArrayListExtra(EXTRA_SELECTED_ACTIVITIES, ArrayList(it)) }
             }
             setResult(RESULT_OK, resultIntent)
             finish()
@@ -306,6 +342,13 @@ class SelectAppsActivity : AppCompatActivity() {
         }
         val adapter = ApplicationAdapter(filteredList, selectedAppList).also { appsAdapter = it }
         binding.appList.adapter = adapter
+        if (intent.hasExtra(EXTRA_SELECTED_ACTIVITIES)) {
+            selectedActivities = LinkedHashSet(intent.getStringArrayListExtra(EXTRA_SELECTED_ACTIVITIES).orEmpty())
+            binding.hint.setText(R.string.activities_long_press_hint)
+            binding.hint.visibility = View.VISIBLE
+            // Apps with blocked activities sort with the ticked apps.
+            adapter.updateData(sortSelectedItemsToTop(appItemList))
+        }
         if (intent.hasExtra(EXTRA_APP_LIST_IDS)) {
             checkedListIds = LinkedHashSet(intent.getStringArrayListExtra(EXTRA_APP_LIST_IDS).orEmpty())
             lifecycleScope.launch {
@@ -342,7 +385,7 @@ class SelectAppsActivity : AppCompatActivity() {
     fun sortSelectedItemsToTop(appItemList: List<AppItem>): List<AppItem> {
         // Apps a ticked list covers count as ticked, so they sort to the top too.
         return appItemList.sortedWith(compareBy<AppItem> {
-            !isChecked(it.packageName)
+            !isChecked(it.packageName) && activityCount(it.packageName) == 0
         }.thenBy {
             it.displayName.lowercase()
         })
@@ -352,6 +395,7 @@ class SelectAppsActivity : AppCompatActivity() {
         val appIcon: ImageView = itemView.findViewById(R.id.app_icon)
         val appName: TextView = itemView.findViewById(R.id.app_name)
         val checkbox: CheckBox = itemView.findViewById(R.id.checkbox)
+        val detail: TextView = itemView.findViewById(R.id.app_detail)
     }
 
     inner class ApplicationAdapter(
@@ -438,6 +482,27 @@ class SelectAppsActivity : AppCompatActivity() {
             holder.itemView.setOnClickListener {
                 holder.checkbox.isChecked = !holder.checkbox.isChecked
                 updateSelectAllButton()
+            }
+
+            val activities = activityCount(appItem.packageName)
+            holder.detail.visibility = if (activities > 0) View.VISIBLE else View.GONE
+            if (activities > 0) {
+                holder.detail.text = resources.getQuantityString(
+                    if (holder.checkbox.isChecked) R.plurals.activities_blocked_whole_app
+                    else R.plurals.activities_blocked,
+                    activities, activities
+                )
+            }
+            if (selectedActivities != null) {
+                // Rows a ticked list covers are disabled, so this does not fire there; the
+                // whole app is blocked through the list anyway.
+                holder.itemView.isLongClickable = true
+                holder.itemView.setOnLongClickListener {
+                    openActivities(appItem.packageName)
+                    true
+                }
+            } else {
+                holder.itemView.setOnLongClickListener(null)
             }
         }
 

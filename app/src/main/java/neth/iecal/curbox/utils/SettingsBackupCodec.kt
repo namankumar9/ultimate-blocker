@@ -6,6 +6,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import neth.iecal.curbox.data.models.AppBlockerWarningScreenConfig
 import neth.iecal.curbox.data.models.AppTimeConfig
+import neth.iecal.curbox.data.models.BlockedActivity
 import neth.iecal.curbox.data.models.PomodoroState
 import neth.iecal.curbox.data.models.Settings
 import neth.iecal.curbox.data.models.SettingsChangeDelayConfig
@@ -144,6 +145,7 @@ object SettingsBackupCodec {
             require(!config.isPasswordRequirementEnabled || WarningPassword.isValidHash(config.passwordHash))
         }
         settings.blockedAppGroups.forEach {
+            require(it.selectedActivities.all { key -> BlockedActivity.parse(key) != null })
             requireNotNull(it.blockingType)
             it.config?.let { config -> schedule(config.schedule); limits(config.usage.uniformLimit, config.usage.dailyLimits) }
             warning(it.warningScreenConfig)

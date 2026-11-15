@@ -37,6 +37,7 @@ class CreateAppGroupFragment : Fragment() {
 
     private var selectedApps: ArrayList<String> = arrayListOf()
     private var selectedListIds: ArrayList<String> = arrayListOf()
+    private var selectedActivities: ArrayList<String> = arrayListOf()
     private var isPrefilled = false
     private var autoAddNewApps = false
     private val viewModel: AppBlockerSettingViewModel by activityViewModels()
@@ -50,6 +51,9 @@ class CreateAppGroupFragment : Fragment() {
                 selectedApps = apps
                 result.data?.getStringArrayListExtra(SelectAppsActivity.EXTRA_APP_LIST_IDS)?.let {
                     selectedListIds = it
+                }
+                result.data?.getStringArrayListExtra(SelectAppsActivity.EXTRA_SELECTED_ACTIVITIES)?.let {
+                    selectedActivities = it
                 }
                 autoAddNewApps = result.data?.getBooleanExtra(SelectAppsActivity.EXTRA_AUTO_ADD_NEW_APPS, false) == true
                 updateSelectAppsButton()
@@ -91,6 +95,7 @@ class CreateAppGroupFragment : Fragment() {
                         binding.etGroupName.setText(group.name)
                         selectedApps = ArrayList(group.selectedPackages)
                         selectedListIds = ArrayList(group.appListIds)
+                        selectedActivities = ArrayList(group.selectedActivities)
                         autoAddNewApps = group.autoAddNewApps
                         updateSelectAppsButton()
 
@@ -152,7 +157,7 @@ class CreateAppGroupFragment : Fragment() {
             return
         }
 
-        if (selectedApps.isEmpty() && selectedListIds.isEmpty() && !autoAddNewApps) {
+        if (selectedApps.isEmpty() && selectedListIds.isEmpty() && selectedActivities.isEmpty() && !autoAddNewApps) {
             Toast.makeText(requireContext(), getString(R.string.please_select_at_least_one_app), Toast.LENGTH_SHORT).show()
             return
         }
@@ -173,6 +178,7 @@ class CreateAppGroupFragment : Fragment() {
             name = name,
             selectedPackages = selectedApps.toList(),
             appListIds = selectedListIds.toList(),
+            selectedActivities = selectedActivities.toList(),
             config = AppGroupConfig(
                 schedule = viewModel.currentTimeConfig,
                 usage = viewModel.currentUsageConfig
@@ -239,6 +245,7 @@ class CreateAppGroupFragment : Fragment() {
             putExtra(SelectAppsActivity.EXTRA_ALLOW_CURBOX, true)
             putExtra(SelectAppsActivity.EXTRA_AUTO_ADD_NEW_APPS, autoAddNewApps)
             putStringArrayListExtra(SelectAppsActivity.EXTRA_APP_LIST_IDS, selectedListIds)
+            putStringArrayListExtra(SelectAppsActivity.EXTRA_SELECTED_ACTIVITIES, selectedActivities)
         }
         selectAppsLauncher.launch(intent)
     }
@@ -248,11 +255,17 @@ class CreateAppGroupFragment : Fragment() {
             if (autoAddNewApps) R.string.select_apps_count_plus_new else R.string.select_apps_count,
             selectedApps.size
         )
-        binding.btnSelectApps.text = if (selectedListIds.isEmpty()) apps
+        val withLists = if (selectedListIds.isEmpty()) apps
         else getString(
             R.string.select_apps_with_lists,
             apps,
             resources.getQuantityString(R.plurals.app_list_count, selectedListIds.size, selectedListIds.size)
+        )
+        binding.btnSelectApps.text = if (selectedActivities.isEmpty()) withLists
+        else getString(
+            R.string.select_apps_activities_part,
+            withLists,
+            resources.getQuantityString(R.plurals.activity_count, selectedActivities.size, selectedActivities.size)
         )
     }
 
