@@ -1,25 +1,20 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Keep crash logs readable: line numbers survive and can be retraced with mapping.txt.
+-keepattributes SourceFile,LineNumberTable
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Settings and API payloads are stored as JSON through Gson reflection. Field names are the
+# storage format, and default constructors supply the defaults for fields missing in old JSON.
+-keep class neth.iecal.curbox.data.models.** { *; }
+-keep class neth.iecal.curbox.ui.views.Contributor { *; }
+# Settings stores a Pair, which Gson writes as "first" and "second".
+-keepclassmembers class kotlin.Pair { <fields>; }
+-keepclassmembers class kotlin.Triple { <fields>; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# MPAndroidChart animates through ObjectAnimator property names.
+-keep class com.github.mikephil.charting.animation.ChartAnimator { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
-# The usage screen discovers ASCII art strings by their resource field names.
--keepclassmembers class neth.iecal.curbox.R$string {
-    public static int ascii*;
+
+# Debug logging is dead weight in release builds.
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
 }

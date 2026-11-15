@@ -17,7 +17,9 @@ enum class GatedSettingsField {
     APP_USAGE_TRACKING,
     WEBSITE_USAGE_TRACKING,
     CHANGE_DELAY,
-    APP_LISTS
+    APP_LISTS,
+    SIP_STRETCH,
+    SCHEDULED_NOTIFICATIONS
 }
 
 /**

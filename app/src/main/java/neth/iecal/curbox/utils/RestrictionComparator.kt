@@ -17,6 +17,8 @@ import neth.iecal.curbox.data.models.MindfulMessageConfig
 import neth.iecal.curbox.data.models.ReelBlocker
 import neth.iecal.curbox.data.models.Settings
 import neth.iecal.curbox.data.models.SettingsChangeDelayConfig
+import neth.iecal.curbox.data.models.ScheduledNotificationsConfig
+import neth.iecal.curbox.data.models.SipStretchConfig
 import neth.iecal.curbox.data.models.TimeInterval
 import neth.iecal.curbox.data.models.UiHiderConfig
 import neth.iecal.curbox.data.models.upgradeLegacyConfig
@@ -58,6 +60,13 @@ object RestrictionComparator {
                     grayscaleGroups(current.grayscaleGroups, proposed.grayscaleGroups)
                 GatedSettingsField.MINDFUL_MESSAGES ->
                     mindfulMessages(current.mindfulMessageConfig, proposed.mindfulMessageConfig)
+                GatedSettingsField.SIP_STRETCH ->
+                    sipStretch(current.sipStretchConfig, proposed.sipStretchConfig)
+                GatedSettingsField.SCHEDULED_NOTIFICATIONS ->
+                    scheduledNotifications(
+                        current.scheduledNotificationsConfig,
+                        proposed.scheduledNotificationsConfig
+                    )
                 GatedSettingsField.UI_HIDER ->
                     uiHider(current.uiHiderConfig, proposed.uiHiderConfig)
                 GatedSettingsField.APP_USAGE_TRACKING ->
@@ -199,6 +208,26 @@ object RestrictionComparator {
     fun mindfulMessages(old: MindfulMessageConfig, new: MindfulMessageConfig): Boolean {
         if (!old.isActive) return true
         return new.isActive && new.selectedApps.containsAll(old.selectedApps)
+    }
+
+    fun sipStretch(old: SipStretchConfig, new: SipStretchConfig): Boolean {
+        if (!old.isActive) return true
+        return new.isActive &&
+            new.selectedApps.containsAll(old.selectedApps) &&
+            new.usageLimitMinutes <= old.usageLimitMinutes &&
+            new.breakMinutes >= old.breakMinutes
+    }
+
+    /** Fewer delivery times and fewer allowed apps hold notifications for longer. */
+    fun scheduledNotifications(
+        old: ScheduledNotificationsConfig,
+        new: ScheduledNotificationsConfig
+    ): Boolean {
+        if (!old.isActive || old.deliveryMinutes.isEmpty()) return true
+        return new.isActive &&
+            new.deliveryMinutes.isNotEmpty() &&
+            old.deliveryMinutes.containsAll(new.deliveryMinutes) &&
+            old.allowedApps.containsAll(new.allowedApps)
     }
 
     fun uiHider(old: UiHiderConfig, new: UiHiderConfig): Boolean {

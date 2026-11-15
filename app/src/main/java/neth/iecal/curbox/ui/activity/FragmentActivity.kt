@@ -37,6 +37,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import neth.iecal.curbox.utils.BlurFadeAnimator
+import neth.iecal.curbox.utils.ExtensionPromo
 
 class FragmentActivity : AppCompatActivity() {
 
@@ -73,7 +74,9 @@ class FragmentActivity : AppCompatActivity() {
         setContentView(R.layout.activity_fragment)
 
         maybeShowTermsConsent()
-        maybeShowWhatsNew()
+        // One dialog per launch. The extension announcement follows the changelog
+        // when both are due, and the donation prompt waits for a quieter launch.
+        val showedAnnouncement = maybeShowWhatsNew() || ExtensionPromo.maybeShow(this)
 
         val bottomNav = findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.bottom_nav)
 
@@ -110,6 +113,9 @@ class FragmentActivity : AppCompatActivity() {
                 IntentsLogFragment.FRAGMENT_ID,
                 AdvancedAnalyticsFragment.FRAGMENT_ID,
             neth.iecal.curbox.ui.fragments.main.reducers.anti_stimulants.mindful_messages.MindfulMessagesFragment.FRAGMENT_ID,
+            neth.iecal.curbox.ui.fragments.main.reducers.anti_stimulants.sip_stretch.SipStretchFragment.FRAGMENT_ID,
+            neth.iecal.curbox.ui.fragments.main.reducers.anti_stimulants.scheduled_notifications.ScheduledNotificationsFragment.FRAGMENT_ID,
+            neth.iecal.curbox.ui.fragments.main.reducers.anti_stimulants.urge_surf.UrgeSurfFragment.FRAGMENT_ID,
             KeywordBlockerFragment.FRAGMENT_ID,
             neth.iecal.curbox.ui.fragments.main.reducers.api.ApiFragment.FRAGMENT_ID,
             AntiUninstallFragment.FRAGMENT_ID,
@@ -136,6 +142,9 @@ class FragmentActivity : AppCompatActivity() {
                     GrayscaleFragment.FRAGMENT_ID -> GrayscaleFragment()
                     CreateGrayscaleGroupFragment.FRAGMENT_ID -> CreateGrayscaleGroupFragment()
                     neth.iecal.curbox.ui.fragments.main.reducers.anti_stimulants.mindful_messages.MindfulMessagesFragment.FRAGMENT_ID -> neth.iecal.curbox.ui.fragments.main.reducers.anti_stimulants.mindful_messages.MindfulMessagesFragment()
+                    neth.iecal.curbox.ui.fragments.main.reducers.anti_stimulants.sip_stretch.SipStretchFragment.FRAGMENT_ID -> neth.iecal.curbox.ui.fragments.main.reducers.anti_stimulants.sip_stretch.SipStretchFragment()
+                    neth.iecal.curbox.ui.fragments.main.reducers.anti_stimulants.scheduled_notifications.ScheduledNotificationsFragment.FRAGMENT_ID -> neth.iecal.curbox.ui.fragments.main.reducers.anti_stimulants.scheduled_notifications.ScheduledNotificationsFragment()
+                    neth.iecal.curbox.ui.fragments.main.reducers.anti_stimulants.urge_surf.UrgeSurfFragment.FRAGMENT_ID -> neth.iecal.curbox.ui.fragments.main.reducers.anti_stimulants.urge_surf.UrgeSurfFragment()
                     IntentsLogFragment.FRAGMENT_ID -> IntentsLogFragment()
                     AdvancedAnalyticsFragment.FRAGMENT_ID -> AdvancedAnalyticsFragment()
                     neth.iecal.curbox.ui.fragments.main.reducers.api.ApiFragment.FRAGMENT_ID -> neth.iecal.curbox.ui.fragments.main.reducers.api.ApiFragment()
@@ -164,7 +173,7 @@ class FragmentActivity : AppCompatActivity() {
                     }
                 }
 
-                neth.iecal.curbox.utils.DonationPrompt.maybeShow(this)
+                if (!showedAnnouncement) neth.iecal.curbox.utils.DonationPrompt.maybeShow(this)
 
                 if (savedInstanceState == null) {
                     // The launcher "Focus mode" shortcut asks for the focus tab.
@@ -209,32 +218,35 @@ class FragmentActivity : AppCompatActivity() {
 
     // The changelog shown here is the same file fastlane ships to the stores,
     // copied into assets/changelogs/<versionCode>.txt at build time.
-    private fun maybeShowWhatsNew() {
+    // Returns true when the dialog was shown.
+    private fun maybeShowWhatsNew(): Boolean {
         val prefs = getSharedPreferences("AppPreferences", Context.MODE_PRIVATE)
 
         // A user who has not agreed to the terms yet is looking at that dialog.
         // Leave the version unrecorded so the changelog shows on the next launch.
-        if (!prefs.getBoolean("hasAcceptedTerms", false)) return
+        if (!prefs.getBoolean("hasAcceptedTerms", false)) return false
 
         val currentVersion = neth.iecal.curbox.BuildConfig.VERSION_CODE
-        if (prefs.getInt("lastSeenVersionCode", 0) == currentVersion) return
+        if (prefs.getInt("lastSeenVersionCode", 0) == currentVersion) return false
         prefs.edit().putInt("lastSeenVersionCode", currentVersion).apply()
 
         // Someone still in onboarding just installed the app, so nothing is new to them.
-        if (!prefs.getBoolean("isFirstLaunchComplete", false)) return
+        if (!prefs.getBoolean("isFirstLaunchComplete", false)) return false
 
         val changelog = try {
             assets.open("changelogs/$currentVersion.txt").bufferedReader().use { it.readText() }.trim()
         } catch (e: Exception) {
-            return
+            return false
         }
-        if (changelog.isEmpty()) return
+        if (changelog.isEmpty()) return false
 
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.whats_new_title)
             .setMessage(changelog)
             .setPositiveButton(R.string.whats_new_dismiss, null)
+            .setOnDismissListener { if (!isFinishing) ExtensionPromo.maybeShow(this) }
             .show()
+        return true
     }
 
     private fun openUrl(url: String) {
