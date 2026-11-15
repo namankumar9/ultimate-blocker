@@ -1,0 +1,9 @@
+NEW:
+• Block single screens of an app: in an app group's app picker, long-press an app to see its screens (activities) and tick the ones to block. They follow the group's active hours and warning screen. Apps that show everything in one screen cannot be blocked this way.
+
+IMPROVEMENTS:
+• App lists now sit in one "App lists" row in the app picker, with a checklist to pick them.
+• Apps covered by a picked app list sort to the top with the other ticked apps.
+
+FIXES:
+• Searching in the app picker works again after importing apps from a group.
