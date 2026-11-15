@@ -1,0 +1,2 @@
+NEW:
+• Unlock with a password: when you set up a warning screen, pick "Unlock requires a password" under Require effort to unlock. Good when a friend or partner keeps the password for you. Only a scrambled copy of the password is saved, so it never appears in backups.
