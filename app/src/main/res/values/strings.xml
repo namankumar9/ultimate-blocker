@@ -2032,6 +2032,14 @@
     <string name="warning_external_help">Connect a supported app through Ultimate Blocker API. That app checks your goal, such as reaching a place or finishing your cards. Access lasts for the unlock time you choose.</string>
     <string name="warning_external_select">Choose a requirement. Connect a supported app if this list is empty.</string>
     <string name="warning_external_check">Check requirement</string>
+    <string name="warning_option_password">Unlock requires a password</string>
+    <string name="warning_option_password_desc">Enter a password. Good when someone else keeps it for you.</string>
+    <string name="label_password_auth">Password</string>
+    <string name="label_password_desc">Pick the password needed to get past the block. Use at least four letters. Ultimate Blocker cannot show it to you later.</string>
+    <string name="label_password_keep_desc">A password is already set. Leave these boxes empty to keep it, or type a new one to replace it.</string>
+    <string name="hint_new_password">Password</string>
+    <string name="hint_confirm_password">Type the password again</string>
+    <string name="hint_enter_password">Enter the password</string>
     <string name="warning_external_unavailable">This requirement is unavailable. Check that the app is installed and has Ultimate Blocker API access.</string>
     <string name="warning_external_denied">The requirement was not approved. You can try again.</string>
     <!-- Advanced analytics -->

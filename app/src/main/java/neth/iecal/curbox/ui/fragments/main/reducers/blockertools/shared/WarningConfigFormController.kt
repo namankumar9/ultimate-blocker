@@ -15,6 +15,7 @@ import neth.iecal.curbox.R
 import neth.iecal.curbox.data.models.AppBlockerWarningScreenConfig
 import neth.iecal.curbox.data.models.ManualFocusGroup
 import neth.iecal.curbox.databinding.FragmentWarningConfigBinding
+import neth.iecal.curbox.utils.WarningPassword
 
 internal class WarningConfigFormController(
     private val fragment: Fragment,
@@ -35,6 +36,7 @@ internal class WarningConfigFormController(
     private var selectedFocusGroupId = ""
     private var selectedExternalCondition: ExternalUnlockCondition? = null
     private var externalConditions: List<ExternalUnlockCondition> = emptyList()
+    private var existingPasswordHash = ""
 
     fun bindExternalConditions(conditions: List<ExternalUnlockCondition>) {
         externalConditions = (conditions + listOfNotNull(selectedExternalCondition)).distinct()
@@ -58,6 +60,11 @@ internal class WarningConfigFormController(
         supportsOnEachOpen: Boolean
     ) {
         selectedExternalCondition = config.externalUnlockCondition
+        existingPasswordHash = if (config.isPasswordRequirementEnabled) config.passwordHash else ""
+        binding.passwordSetupDesc.setText(
+            if (existingPasswordHash.isEmpty()) R.string.label_password_desc
+            else R.string.label_password_keep_desc
+        )
         this.supportsOnEachOpen = supportsOnEachOpen
         val isOnEachOpenEnabled = supportsOnEachOpen && config.isOnOpenConfig
         binding.switchOnEachOpen.isVisible = supportsOnEachOpen
@@ -292,6 +299,8 @@ internal class WarningConfigFormController(
             nfcKeys = if (flags.isNfcUnlockRequirementEnabled) nfcKeys else emptyMap(),
             isTypingRequirementEnabled = flags.isTypingRequirementEnabled,
             typingSentence = binding.typingSentenceEdit.text.toString(),
+            isPasswordRequirementEnabled = flags.isPasswordRequirementEnabled,
+            passwordHash = if (flags.isPasswordRequirementEnabled) passwordHashToSave() else "",
             isIntentRequirementEnabled = flags.isIntentRequirementEnabled,
             minIntentLength = numericInputValue(binding.intentMinLengthInput).toInt(),
             isAdaptiveMathRequirementEnabled = flags.isAdaptiveMathRequirementEnabled,
@@ -311,8 +320,37 @@ internal class WarningConfigFormController(
             proceedsTimeWindowMn = selectedProceedWindowMinutes(),
             isOnOpenConfig = isOnEachOpenEnabled(),
             externalUnlockCondition = if (selectedChallengeIndex() == WarningUnlockSelectionMapper.EFFORT_INDEX &&
-                selectedSecondaryIndex(selectedChallengeIndex()) == 5) selectedExternalCondition else null
+                selectedSecondaryIndex(selectedChallengeIndex()) == WarningUnlockSelectionMapper.EXTERNAL_INDEX) selectedExternalCondition else null
         )
+    }
+
+    /** A new password replaces the old one; empty fields keep the password already saved. */
+    private fun passwordHashToSave(): String {
+        val password = binding.passwordEdit.text?.toString().orEmpty()
+        return if (password.isEmpty()) existingPasswordHash else WarningPassword.hash(password)
+    }
+
+    private fun validatePassword(): Boolean {
+        binding.passwordInputLayout.error = null
+        binding.passwordConfirmLayout.error = null
+        val password = binding.passwordEdit.text?.toString().orEmpty()
+        val confirm = binding.passwordConfirmEdit.text?.toString().orEmpty()
+        if (password.isEmpty() && confirm.isEmpty() && existingPasswordHash.isNotEmpty()) return true
+        return when {
+            password.length < WarningPassword.MIN_LENGTH -> {
+                binding.passwordInputLayout.error =
+                    fragment.getString(R.string.anti_uninstall_password_too_short)
+                binding.passwordEdit.requestFocus()
+                false
+            }
+            password != confirm -> {
+                binding.passwordConfirmLayout.error =
+                    fragment.getString(R.string.anti_uninstall_password_mismatch)
+                binding.passwordConfirmEdit.requestFocus()
+                false
+            }
+            else -> true
+        }
     }
 
     fun isOnEachOpenEnabled(): Boolean {
@@ -336,8 +374,14 @@ internal class WarningConfigFormController(
 
     fun validate(): Boolean {
         if (selectedChallengeIndex() == WarningUnlockSelectionMapper.EFFORT_INDEX &&
-            selectedSecondaryIndex(selectedChallengeIndex()) == 5 && selectedExternalCondition == null) {
+            selectedSecondaryIndex(selectedChallengeIndex()) == WarningUnlockSelectionMapper.EXTERNAL_INDEX &&
+            selectedExternalCondition == null) {
             binding.externalConditionLayout.error = fragment.getString(R.string.warning_external_select)
+            return false
+        }
+        if (selectedChallengeIndex() == WarningUnlockSelectionMapper.EFFORT_INDEX &&
+            selectedSecondaryIndex(selectedChallengeIndex()) == WarningUnlockSelectionMapper.PASSWORD_INDEX &&
+            !validatePassword()) {
             return false
         }
         if (!numericInputs().all { validateNumericInput(it) }) {
@@ -485,6 +529,7 @@ internal class WarningConfigFormController(
         binding.qrSetupContainer.isVisible = false
         binding.nfcSetupContainer.isVisible = false
         binding.typingSetupContainer.isVisible = false
+        binding.passwordSetupContainer.isVisible = false
         binding.mathSetupContainer.isVisible = false
         binding.externalConditionLayout.isVisible = false
     }
@@ -529,7 +574,9 @@ internal class WarningConfigFormController(
             WarningUnlockSelectionMapper.NO_EFFORT_INDEX ->
                 secondaryIndex == WarningUnlockSelectionMapper.FIXED_TIME_INDEX
             WarningUnlockSelectionMapper.EFFORT_INDEX ->
-                secondaryIndex == 1 || secondaryIndex == 2 || secondaryIndex == 4 || secondaryIndex == 5
+                secondaryIndex == 1 || secondaryIndex == 2 || secondaryIndex == 4 ||
+                    secondaryIndex == WarningUnlockSelectionMapper.EXTERNAL_INDEX ||
+                    secondaryIndex == WarningUnlockSelectionMapper.PASSWORD_INDEX
             else -> false
         }
         binding.timingContainer.isVisible = !isOnEachOpenEnabled() && usesSharedTiming
@@ -548,8 +595,12 @@ internal class WarningConfigFormController(
         binding.nfcSetupContainer.isVisible =
             challengeIndex == WarningUnlockSelectionMapper.EFFORT_INDEX &&
                 secondaryIndex == 3
+        binding.passwordSetupContainer.isVisible =
+            challengeIndex == WarningUnlockSelectionMapper.EFFORT_INDEX &&
+                secondaryIndex == WarningUnlockSelectionMapper.PASSWORD_INDEX
         binding.externalConditionLayout.isVisible =
-            challengeIndex == WarningUnlockSelectionMapper.EFFORT_INDEX && secondaryIndex == 5
+            challengeIndex == WarningUnlockSelectionMapper.EFFORT_INDEX &&
+                secondaryIndex == WarningUnlockSelectionMapper.EXTERNAL_INDEX
         binding.mathSetupContainer.isVisible =
             challengeIndex == WarningUnlockSelectionMapper.EFFORT_INDEX &&
                 secondaryIndex == 4

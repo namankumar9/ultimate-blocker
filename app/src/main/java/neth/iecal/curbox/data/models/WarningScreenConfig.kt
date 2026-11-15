@@ -26,6 +26,8 @@ data class AppBlockerWarningScreenConfig(
     val nfcKeys: Map<String,Long> = mapOf(), // nfc tag key (written UUID or UID) -> Duration of unlock (-1 if dynamic timing)
     val isTypingRequirementEnabled: Boolean = false,
     val typingSentence: String = "",
+    val isPasswordRequirementEnabled: Boolean = false,
+    val passwordHash: String = "", // salted hash from WarningPassword, never the password itself
     val isIntentRequirementEnabled: Boolean = false,
     val minIntentLength: Int = 1,
     val isAdaptiveMathRequirementEnabled: Boolean = false,

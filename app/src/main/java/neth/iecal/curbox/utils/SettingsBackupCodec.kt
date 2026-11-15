@@ -140,6 +140,8 @@ object SettingsBackupCodec {
             require(config.allowedProceeds >= 0 && config.proceedsTimeWindowMn in 1..Long.MAX_VALUE / 60_000L)
             require(config.qrKeys.values.all { it == -1L || it > 0L })
             require(config.nfcKeys.values.all { it == -1L || it > 0L })
+            // A password unlock without a usable hash could never be opened.
+            require(!config.isPasswordRequirementEnabled || WarningPassword.isValidHash(config.passwordHash))
         }
         settings.blockedAppGroups.forEach {
             requireNotNull(it.blockingType)

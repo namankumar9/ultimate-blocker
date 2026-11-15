@@ -59,6 +59,10 @@ internal fun createWarningEffortOptions(context: Context) = listOf(
     WarningUnlockOption(
         context.getString(R.string.warning_option_external),
         context.getString(R.string.warning_option_external_desc)
+    ),
+    WarningUnlockOption(
+        context.getString(R.string.warning_option_password),
+        context.getString(R.string.warning_option_password_desc)
     )
 )
 
@@ -86,6 +90,7 @@ internal data class WarningUnlockFlags(
     val isIntentRequirementEnabled: Boolean = false,
     val isNfcUnlockRequirementEnabled: Boolean = false,
     val isAdaptiveMathRequirementEnabled: Boolean = false,
+    val isPasswordRequirementEnabled: Boolean = false,
     val isDynamicIntervalSettingAllowed: Boolean = false
 )
 
@@ -94,6 +99,8 @@ internal object WarningUnlockSelectionMapper {
     const val EFFORT_INDEX = 1
     const val NO_EFFORT_INDEX = 2
     const val FIXED_TIME_INDEX = 1
+    const val EXTERNAL_INDEX = 5
+    const val PASSWORD_INDEX = 6
 
     fun fromConfig(
         config: AppBlockerWarningScreenConfig,
@@ -105,6 +112,7 @@ internal object WarningUnlockSelectionMapper {
             config.isTypingRequirementEnabled -> WarningUnlockSelection(EFFORT_INDEX, 1)
             config.isIntentRequirementEnabled -> WarningUnlockSelection(EFFORT_INDEX, 2)
             config.isNfcUnlockRequirementEnabled -> WarningUnlockSelection(EFFORT_INDEX, 3)
+            config.isPasswordRequirementEnabled -> WarningUnlockSelection(EFFORT_INDEX, PASSWORD_INDEX)
             config.externalUnlockCondition != null -> WarningUnlockSelection(EFFORT_INDEX, 5)
             config.isAdaptiveMathRequirementEnabled -> WarningUnlockSelection(EFFORT_INDEX, 4)
             config.isDynamicIntervalSettingAllowed -> WarningUnlockSelection(NO_EFFORT_INDEX, 0)
@@ -126,6 +134,7 @@ internal object WarningUnlockSelectionMapper {
                 2 -> WarningUnlockFlags(isIntentRequirementEnabled = true)
                 3 -> WarningUnlockFlags(isNfcUnlockRequirementEnabled = true)
                 4 -> WarningUnlockFlags(isAdaptiveMathRequirementEnabled = true)
+                PASSWORD_INDEX -> WarningUnlockFlags(isPasswordRequirementEnabled = true)
                 else -> WarningUnlockFlags()
             }
             NO_EFFORT_INDEX -> WarningUnlockFlags(

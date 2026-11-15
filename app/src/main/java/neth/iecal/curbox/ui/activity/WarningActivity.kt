@@ -40,6 +40,7 @@ import neth.iecal.curbox.data.models.AppBlockerWarningScreenConfig
 import neth.iecal.curbox.databinding.DialogWarningOverlayBinding
 import neth.iecal.curbox.utils.DataStoreManager
 import neth.iecal.curbox.utils.FocusGoalProgress
+import neth.iecal.curbox.utils.WarningPassword
 import java.util.Calendar
 import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
@@ -338,6 +339,16 @@ class WarningActivity : AppCompatActivity() {
                                         entered.toString() == requiredSentence
                                     )
                                 }
+                            } else if (warningScreenConfig.isPasswordRequirementEnabled) {
+                                binding.passwordUnlockLayout.visibility = View.VISIBLE
+                                button.setText(R.string.proceed)
+                                setPrimaryUnlockActionReady(
+                                    !binding.passwordUnlockEdit.text.isNullOrEmpty()
+                                )
+                                binding.passwordUnlockEdit.doAfterTextChanged { s ->
+                                    binding.passwordUnlockLayout.error = null
+                                    setPrimaryUnlockActionReady(!s.isNullOrEmpty())
+                                }
                             } else if (warningScreenConfig.isAdaptiveMathRequirementEnabled) {
                                 setupAdaptiveMathChallenge(
                                     warningScreenConfig.adaptiveMathQuestionCount,
@@ -404,6 +415,18 @@ class WarningActivity : AppCompatActivity() {
                 !isAdaptiveMathComplete
             ) {
                 submitAdaptiveMathAnswer()
+                return@setOnClickListener
+            }
+
+            if (warningScreenConfig.isPasswordRequirementEnabled &&
+                !WarningPassword.verify(
+                    binding.passwordUnlockEdit.text?.toString().orEmpty(),
+                    warningScreenConfig.passwordHash
+                )
+            ) {
+                // Clear first: the text listener resets the error on every change.
+                binding.passwordUnlockEdit.text?.clear()
+                binding.passwordUnlockLayout.error = getString(R.string.anti_uninstall_wrong_password)
                 return@setOnClickListener
             }
 

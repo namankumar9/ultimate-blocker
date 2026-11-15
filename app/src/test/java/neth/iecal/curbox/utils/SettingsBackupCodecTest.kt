@@ -140,5 +140,34 @@ class SettingsBackupCodecTest {
     private fun document(fields: String) =
         """{"format":"curbox-settings-backup","version":1,"settings":{$fields}}"""
     private fun decode(json: String) = SettingsBackupCodec.decode(json.byteInputStream())
+    @Test
+    fun passwordUnlockKeepsOnlyTheHash() {
+        val hash = WarningPassword.hash("secret1")
+        val settings = Settings(blockedAppGroups = listOf(AppGroup(
+            id = "apps", name = "Evening", selectedPackages = listOf("example.app"),
+            isActive = true, config = AppGroupConfig(),
+            warningScreenConfig = AppBlockerWarningScreenConfig(isPasswordRequirementEnabled = true, passwordHash = hash)
+        )))
+        val encoded = String(SettingsBackupCodec.encode(settings), Charsets.UTF_8)
+        assertFalse(encoded.contains("secret1"))
+        val restored = roundTrip(settings).blockedAppGroups.single().warningScreenConfig
+        assertTrue(restored.isPasswordRequirementEnabled)
+        assertTrue(WarningPassword.verify("secret1", restored.passwordHash))
+    }
+
+    @Test
+    fun passwordUnlockWithoutHashIsRejected() {
+        val settings = Settings(blockedAppGroups = listOf(AppGroup(
+            id = "apps", name = "Evening", selectedPackages = listOf("example.app"),
+            isActive = true, config = AppGroupConfig(),
+            warningScreenConfig = AppBlockerWarningScreenConfig(isPasswordRequirementEnabled = true)
+        )))
+        try {
+            roundTrip(settings)
+            fail("Expected a password unlock without a hash to be rejected")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
     private fun roundTrip(settings: Settings) = SettingsBackupCodec.decode(SettingsBackupCodec.encode(settings).inputStream())
 }

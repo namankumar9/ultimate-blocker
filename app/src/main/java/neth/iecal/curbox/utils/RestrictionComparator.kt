@@ -337,6 +337,9 @@ object RestrictionComparator {
         val qrOk = unlockKeysOk(o.isQrUnlockRequirementEnabled, n.isQrUnlockRequirementEnabled, o.qrKeys, n.qrKeys)
         val nfcOk = unlockKeysOk(o.isNfcUnlockRequirementEnabled, n.isNfcUnlockRequirementEnabled, o.nfcKeys, n.nfcKeys)
         val typingOk = !o.isTypingRequirementEnabled || n.isTypingRequirementEnabled
+        // A new password could be one the user knows, so only keeping the same hash counts.
+        val passwordOk = !o.isPasswordRequirementEnabled ||
+            (n.isPasswordRequirementEnabled && n.passwordHash == o.passwordHash)
         val intentOk = !o.isIntentRequirementEnabled || n.isIntentRequirementEnabled
         val adaptiveMathOk = !o.isAdaptiveMathRequirementEnabled ||
             n.isAdaptiveMathRequirementEnabled
@@ -365,7 +368,7 @@ object RestrictionComparator {
 
         return onEachOpenOk && cooldownOk && dynamicIntervalOk &&
             proceedDisabledOk && dialogHiddenOk &&
-            proceedDelayOk && vibrateOk && proceedLimitOk && qrOk && nfcOk && typingOk && intentOk &&
+            proceedDelayOk && vibrateOk && proceedLimitOk && qrOk && nfcOk && typingOk && passwordOk && intentOk &&
             adaptiveMathOk && adaptiveMathQuestionCountOk && adaptiveMathStartingLevelOk &&
             focusGoalOk && intentMinLengthOk
     }
