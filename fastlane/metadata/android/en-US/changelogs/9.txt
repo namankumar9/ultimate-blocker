@@ -1,0 +1,3 @@
+NEW:
+• App lists: save a set of apps once (Reducers > Apps > App lists), then tick it in any app group instead of picking the same apps again. Changing a list changes every group that uses it.
+• Removing apps from a list in use counts as loosening, so it waits for your settings change delay. Adding apps applies right away.
