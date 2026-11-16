@@ -1,0 +1,3 @@
+FIXES:
+• Settings change delay: a stricter edit now applies right away, even while a weaker change to the same tool is waiting. Before, it was held back with the weaker change and showed a "weakens" warning.
+• Settings change delay: a stricter edit no longer restarts the timer of a change that is already waiting, so repeated edits can't keep it waiting forever.
