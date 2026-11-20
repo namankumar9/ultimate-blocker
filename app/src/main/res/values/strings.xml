@@ -719,6 +719,16 @@
     <string name="app_list_in_use_title">List in use</string>
     <string name="app_list_in_use_message">These app groups use this list: %1$s. Remove it from them first.</string>
     <string name="app_list_details_used">%1$s • %2$s</string>
+    <string name="select_apps_save_as_list">Save as a new app list</string>
+    <plurals name="select_apps_save_as_list_message">
+        <item quantity="one">Your %1$d picked app will become a list you can use in any app group.</item>
+        <item quantity="other">Your %1$d picked apps will become a list you can use in any app group.</item>
+    </plurals>
+    <string name="select_apps_list_saved">Saved \"%1$s\"</string>
+    <string name="app_group_make_copy">Make a copy</string>
+    <string name="app_group_copy_name">%1$s (copy)</string>
+    <string name="app_group_copied">Copy made. It starts turned off.</string>
+    <string name="app_group_long_press_hint">Press and hold a group for more options, like making a copy.</string>
     <plurals name="app_list_app_count">
         <item quantity="one">%d app</item>
         <item quantity="other">%d apps</item>

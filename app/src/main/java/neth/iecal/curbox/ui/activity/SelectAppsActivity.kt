@@ -30,10 +30,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import neth.iecal.curbox.R
+import neth.iecal.curbox.blockers.AppBlocker
 import neth.iecal.curbox.data.models.AppList
 import neth.iecal.curbox.databinding.ActivitySelectAppsBinding
 import neth.iecal.curbox.databinding.DialogAddKeywordBinding
 import neth.iecal.curbox.utils.DataStoreManager
+import java.util.UUID
 
 class SelectAppsActivity : AppCompatActivity() {
 
@@ -51,6 +53,8 @@ class SelectAppsActivity : AppCompatActivity() {
          * an app opens its activities to block one by one; the result comes back under this key.
          */
         const val EXTRA_SELECTED_ACTIVITIES = "SELECTED_ACTIVITIES"
+        /** Boolean, default true. False hides "Save as a new app list", e.g. while editing a list. */
+        const val EXTRA_OFFER_SAVE_AS_LIST = "OFFER_SAVE_AS_LIST"
         private const val VIEW_APP = 0
         private const val VIEW_NEW_INSTALLS = 1
         private const val VIEW_APP_LIST = 2
@@ -200,6 +204,9 @@ class SelectAppsActivity : AppCompatActivity() {
                 }
 
                 popupMenu.menu.add(0, 1000, 0, getString(R.string.select_apps_add_custom_menu))
+                if (intent.getBooleanExtra(EXTRA_OFFER_SAVE_AS_LIST, true)) {
+                    popupMenu.menu.add(0, 1001, 0, getString(R.string.select_apps_save_as_list))
+                }
 
                 if (allGroups.isNotEmpty()) {
                     popupMenu.menu.add(0, 1999, 0, getString(R.string.select_apps_import_from_group)).isEnabled = false
@@ -212,6 +219,10 @@ class SelectAppsActivity : AppCompatActivity() {
                     when {
                         menuItem.itemId == 1000 -> {
                             makeAddCustomPackageDialog()
+                            true
+                        }
+                        menuItem.itemId == 1001 -> {
+                            saveSelectionAsList()
                             true
                         }
                         menuItem.itemId >= 2000 -> {
@@ -548,6 +559,57 @@ class SelectAppsActivity : AppCompatActivity() {
                 updateSelectAllButton()
             }
             .show()
+    }
+
+    /**
+     * Saves the ticked apps as a new app list. When this picker offers lists, the new list is
+     * ticked in place of those apps, so the group links to it and later edits to the list apply.
+     */
+    @SuppressLint("NotifyDataSetChanged")
+    private fun saveSelectionAsList() {
+        val apps = (selectedAppList + coveredByLists).sorted()
+        if (apps.isEmpty()) {
+            Toast.makeText(this, R.string.please_select_at_least_one_app, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val dialogBinding = DialogAddKeywordBinding.inflate(layoutInflater)
+        dialogBinding.wHint.hint = getString(R.string.app_list_name_hint)
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.select_apps_save_as_list)
+            .setMessage(resources.getQuantityString(R.plurals.select_apps_save_as_list_message, apps.size, apps.size))
+            .setView(dialogBinding.root)
+            .setPositiveButton(R.string.save, null)
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+        // Keep the dialog open until a name is given.
+        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+            val name = dialogBinding.keywordInput.text?.toString()?.trim().orEmpty()
+            if (name.isEmpty()) {
+                dialogBinding.wHint.error = getString(R.string.app_list_name_required)
+                return@setOnClickListener
+            }
+            dialog.dismiss()
+            val list = AppList(id = UUID.randomUUID().toString(), name = name, packages = apps)
+            lifecycleScope.launch {
+                val current = dataStoreManager.settingsForEditing.first().appLists
+                dataStoreManager.updateAppLists(current + list)
+                sendBroadcast(Intent(AppBlocker.INTENT_ACTION_REFRESH_APP_BLOCKER))
+                val ids = checkedListIds
+                if (ids != null) {
+                    appLists = current + list
+                    ids.add(list.id)
+                    selectedAppList.removeAll(list.packages.toSet())
+                    refreshCoveredApps()
+                    appsAdapter?.updateData(sortSelectedItemsToTop(appItemList))
+                    updateSelectAllButton()
+                }
+                Toast.makeText(
+                    this@SelectAppsActivity,
+                    getString(R.string.select_apps_list_saved, name),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
     }
 
     data class AppItem(

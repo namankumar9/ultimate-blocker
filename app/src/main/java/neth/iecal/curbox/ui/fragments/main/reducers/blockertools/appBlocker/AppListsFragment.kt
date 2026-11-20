@@ -117,6 +117,7 @@ class AppListsFragment : Fragment() {
         pickApps.launch(Intent(requireContext(), SelectAppsActivity::class.java).apply {
             putStringArrayListExtra("PRE_SELECTED_APPS", ArrayList(current))
             putExtra(SelectAppsActivity.EXTRA_ALLOW_CURBOX, true)
+            putExtra(SelectAppsActivity.EXTRA_OFFER_SAVE_AS_LIST, false)
         })
     }
 

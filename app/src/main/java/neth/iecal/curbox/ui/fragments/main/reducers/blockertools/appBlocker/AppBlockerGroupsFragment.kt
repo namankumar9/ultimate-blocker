@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import neth.iecal.curbox.utils.ViewUtils
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -49,6 +50,7 @@ class AppBlockerGroupsFragment : Fragment() {
     private lateinit var rvGroups: RecyclerView
     private lateinit var tvEmptyState: TextView
     private lateinit var fabAddGroup: FloatingActionButton
+    private lateinit var tvLongPressHint: TextView
 
     private val viewModel: AppBlockerSettingViewModel by activityViewModels()
     private val adapter = AppGroupAdapter()
@@ -62,6 +64,7 @@ class AppBlockerGroupsFragment : Fragment() {
         rvGroups = view.findViewById(R.id.rv_app_groups)
         tvEmptyState = view.findViewById(R.id.tv_empty_state)
         fabAddGroup = view.findViewById(R.id.fab_add_group)
+        tvLongPressHint = view.findViewById(R.id.tv_long_press_hint)
 
         view.findViewById<Button>(R.id.btn_help).setOnClickListener {
             ViewUtils.showHelpPopup(it, "Block distracting apps and regain control over your screen time.", "https://curbox.app/docs/reducers/app-pause/")
@@ -95,6 +98,7 @@ class AppBlockerGroupsFragment : Fragment() {
                 viewModel.groups.collectLatest { groups ->
                     tvEmptyState.visibility = if (groups.isEmpty()) View.VISIBLE else View.GONE
                     rvGroups.visibility = if (groups.isEmpty()) View.GONE else View.VISIBLE
+                    tvLongPressHint.visibility = rvGroups.visibility
                     adapter.submitList(groups)
                 }
             }
@@ -238,7 +242,23 @@ class AppBlockerGroupsFragment : Fragment() {
             holder.itemView.setOnClickListener {
                 openGroup(group.id)
             }
+            holder.itemView.setOnLongClickListener {
+                showGroupOptions(group)
+                true
+            }
         }
+    }
+
+    private fun showGroupOptions(group: AppGroup) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(group.name)
+            .setItems(arrayOf(getString(R.string.app_group_make_copy))) { _, _ ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    viewModel.copyGroup(group.id, getString(R.string.app_group_copy_name, group.name))
+                    Toast.makeText(requireContext(), R.string.app_group_copied, Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
     }
 
     private fun openGroup(groupId: String) {

@@ -23,6 +23,7 @@ import neth.iecal.curbox.utils.DataStoreManager
 import neth.iecal.curbox.utils.UsageStatsHelper
 import neth.iecal.curbox.utils.activeWindow
 import java.util.Calendar
+import java.util.UUID
 
 class AppBlockerSettingViewModel(application: Application) : AndroidViewModel(application) {
     var currentUsageConfig: AppUsageConfig = AppUsageConfig(uniformLimit = 0)
@@ -114,6 +115,24 @@ class AppBlockerSettingViewModel(application: Application) : AndroidViewModel(ap
             updatedGroups[index] = updatedGroup
             persistGroups(updatedGroups)
         }
+    }
+
+    /**
+     * Adds a copy of the group right below it. The copy starts turned off, so it blocks
+     * nothing until the user turns it on.
+     */
+    suspend fun copyGroup(groupId: String, copyName: String) {
+        val currentSettings = dataStoreManager.settingsForEditing.first()
+        val updatedGroups = currentSettings.blockedAppGroups.toMutableList()
+        val index = updatedGroups.indexOfFirst { it.id == groupId }
+        if (index == -1) return
+        updatedGroups.add(index + 1, updatedGroups[index].copy(
+            id = UUID.randomUUID().toString(),
+            name = copyName,
+            isActive = false,
+            temporarilyDisabledUntilMs = 0L,
+        ))
+        persistGroups(updatedGroups)
     }
 
     suspend fun deleteGroup(groupId: String) {
