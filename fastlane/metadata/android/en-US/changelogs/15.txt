@@ -1,0 +1,3 @@
+NEW:
+• App groups: each group can have an edit password. With it, you can make the group weaker right away, like turning it off. Without it, the change waits for the group's delay, or 2 days if it has none.
+• Waiting changes to an app group can be applied early with its edit password.
