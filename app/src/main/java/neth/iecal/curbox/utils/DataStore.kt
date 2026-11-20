@@ -68,7 +68,7 @@ private class ScheduledUsageConfigMigration(
         if (currentData.blockedAppGroups.any { it.config == null }) return true
         if (currentData.keywordBlockerConfig.keywordGroups.any { it.config == null }) return true
         return currentData.settingsChangeDelayConfig2.pendingChanges.any {
-            pendingChangeNeedsMigration(it)
+            pendingChangeNeedsMigration(it) || isWholeListAppGroupsChange(it)
         }
     }
 
@@ -76,6 +76,7 @@ private class ScheduledUsageConfigMigration(
         val upgradedPending = currentData.settingsChangeDelayConfig2.pendingChanges.map { change ->
             when (change.field) {
                 GatedSettingsField.APP_GROUPS.name -> {
+                    if (change.itemId.isNotEmpty()) return@map change
                     val groups = parseAppGroups(change.newValueJson) ?: return@map change
                     change.copy(
                         newValueJson = gson.toJson(groups.upgradeLegacyAppGroupConfigs(gson))
@@ -91,21 +92,30 @@ private class ScheduledUsageConfigMigration(
                 else -> change
             }
         }
+        val liveGroups = currentData.blockedAppGroups.upgradeLegacyAppGroupConfigs(gson)
+        // App groups now wait one group at a time. Split an older whole-list waiting change.
+        val perGroupPending = upgradedPending.flatMap { change ->
+            if (isWholeListAppGroupsChange(change)) AppGroupGate.splitLegacyPending(change, liveGroups, gson)
+            else listOf(change)
+        }
         return currentData.copy(
-            blockedAppGroups = currentData.blockedAppGroups.upgradeLegacyAppGroupConfigs(gson),
+            blockedAppGroups = liveGroups,
             keywordBlockerConfig =
                 currentData.keywordBlockerConfig.upgradeLegacyKeywordGroupConfigs(gson),
             settingsChangeDelayConfig2 = currentData.settingsChangeDelayConfig2.copy(
-                pendingChanges = upgradedPending
+                pendingChanges = perGroupPending
             )
         )
     }
+
+    private fun isWholeListAppGroupsChange(change: PendingSettingsChange) =
+        change.field == GatedSettingsField.APP_GROUPS.name && change.itemId.isEmpty()
 
     override suspend fun cleanUp() = Unit
 
     private fun pendingChangeNeedsMigration(change: PendingSettingsChange): Boolean =
         when (change.field) {
-            GatedSettingsField.APP_GROUPS.name ->
+            GatedSettingsField.APP_GROUPS.name -> change.itemId.isEmpty() &&
                 parseAppGroups(change.newValueJson)?.any { it.config == null } == true
             GatedSettingsField.KEYWORD_BLOCKER.name ->
                 parseKeywordBlocker(change.newValueJson)
@@ -196,8 +206,32 @@ class DataStoreManager(private val context: Context) {
         }
     }
 
-    suspend fun updateAppGroups(newGroups: List<AppGroup>) {
-        updateGated(GatedSettingsField.APP_GROUPS) { newGroups }
+    /**
+     * Saves the app groups as an editor shows them. Each group goes through the settings change
+     * delay on its own, with its own wait. See [AppGroupGate].
+     */
+    suspend fun updateAppGroups(newGroups: List<AppGroup>): Unit = withContext(Dispatchers.Default) {
+        var outcome = AppGroupGate.Outcome()
+        settingsDataStore.updateData { current ->
+            val result = AppGroupGate.apply(
+                current, overlayPendingChanges(current), newGroups, System.currentTimeMillis(), gson
+            )
+            outcome = result.outcome
+            result.settings
+        }
+        schedulePendingChanges()
+        val field = GatedSettingsField.APP_GROUPS
+        val deferred = outcome.deferred
+        if (outcome.appliedOverWaiting) {
+            notifyAppliedOverWaiting(field)
+        } else if (deferred != null) {
+            notifyChangeDeferred(
+                field, deferred.appliesAtMs, outcome.replacedExisting, outcome.tamperGated,
+                outcome.keptTimer, deferred.itemId
+            )
+        } else if (outcome.droppedPending) {
+            notifyPendingChangeDropped(field)
+        }
     }
 
     suspend fun updateAppLists(newLists: List<neth.iecal.curbox.data.models.AppList>) {
@@ -235,6 +269,10 @@ class DataStoreManager(private val context: Context) {
                 val delayConfig = current.settingsChangeDelayConfig2
                 val pendingChanges = delayConfig.pendingChanges.map { change ->
                     if (change.field != GatedSettingsField.APP_GROUPS.name) return@map change
+                    if (change.itemId.isNotEmpty()) {
+                        val group = AppGroupGate.parseGroup(change.newValueJson, gson) ?: return@map change
+                        return@map change.copy(newValueJson = gson.toJson(patch(listOf(group)).first()))
+                    }
                     val pendingGroups = runCatching {
                         gson.fromJson<List<AppGroup>>(change.newValueJson, object : TypeToken<List<AppGroup>>() {}.type)
                     }.getOrNull() ?: return@map change
@@ -265,7 +303,6 @@ class DataStoreManager(private val context: Context) {
     suspend fun updateFromSync(remote: Settings) {
         settingsDataStore.updateData { current ->
             val delayConfig = current.settingsChangeDelayConfig2
-            val timeGateActive = delayConfig.isEnabled && delayConfig.delayMinutes > 0
             val tamperGated = delayConfig.requireTamperProtectionOff &&
                 current.antiUninstallConfig2.isEnabled
 
@@ -328,12 +365,24 @@ class DataStoreManager(private val context: Context) {
             )
 
             for (field in GatedSettingsField.values()) {
+                if (field == GatedSettingsField.APP_GROUPS) {
+                    updated = AppGroupGate.apply(
+                        updated,
+                        overlayPendingChanges(updated),
+                        remoteWithLocalRuntime.blockedAppGroups,
+                        System.currentTimeMillis(),
+                        gson
+                    ).settings
+                    continue
+                }
                 val newValueJson = syncedFieldValueJson(remoteWithLocalRuntime, field) ?: continue
                 val existingPending = updated.settingsChangeDelayConfig2.pendingChanges
                     .find { it.field == field.name }
                 if (existingPending?.newValueJson == newValueJson) continue
 
                 val proposed = withFieldValue(updated, field, newValueJson) ?: continue
+                val delayMinutes = gateDelayMinutes(field, current, proposed)
+                val timeGateActive = delayMinutes > 0
                 if ((!timeGateActive && !tamperGated) ||
                     RestrictionComparator.isSameOrStricter(field, current, proposed)
                 ) {
@@ -345,10 +394,6 @@ class DataStoreManager(private val context: Context) {
                     )
                 } else {
                     val now = System.currentTimeMillis()
-                    val delayMinutes = delayConfig.delayMinutes.coerceIn(
-                        0,
-                        SettingsChangeDelayConfig.MAX_DELAY_MINUTES,
-                    )
                     val kept = keepablePendingTimer(field, current, existingPending, proposed)
                     val appliesAt = kept?.appliesAtMs
                         ?: if (timeGateActive) now + delayMinutes * 60_000L else now
@@ -542,7 +587,9 @@ class DataStoreManager(private val context: Context) {
             if (current.settingsChangeDelayConfig2.isEnabled ||
                 current.settingsChangeDelayConfig2.requireTamperProtectionOff) return@updateData current
             val groups = current.blockedAppGroups.map { group ->
-                if (group.id == groupId && group.isActive) {
+                if (group.id == groupId && group.isActive &&
+                    AppGroupGate.temporaryDisableAllowed(current.settingsChangeDelayConfig2, group)
+                ) {
                     changed = true
                     group.copy(isActive = false, temporarilyDisabledUntilMs = untilMs)
                 } else {
@@ -643,12 +690,14 @@ class DataStoreManager(private val context: Context) {
         return deadlines.filter { it > now }.minOrNull()
     }
 
-    suspend fun cancelPendingSettingsChange(fieldName: String, expectedAppliesAtMs: Long? = null) {
+    /** [itemId] picks one group's change when App Pause groups have several waiting. */
+    suspend fun cancelPendingSettingsChange(fieldName: String, expectedAppliesAtMs: Long? = null, itemId: String = "") {
         settingsDataStore.updateData {
             val config = it.settingsChangeDelayConfig2
             it.copy(settingsChangeDelayConfig2 = config.copy(
                 pendingChanges = config.pendingChanges.filterNot { p ->
-                    p.field == fieldName && (expectedAppliesAtMs == null || p.appliesAtMs == expectedAppliesAtMs)
+                    p.field == fieldName && p.itemId == itemId &&
+                        (expectedAppliesAtMs == null || p.appliesAtMs == expectedAppliesAtMs)
                 }
             ))
         }
@@ -717,7 +766,8 @@ class DataStoreManager(private val context: Context) {
                 unchangedPending = true
                 return@updateData current
             }
-            val timeGateActive = delayConfig.isEnabled && delayConfig.delayMinutes > 0
+            val delayMinutes = gateDelayMinutes(field, current, proposed)
+            val timeGateActive = delayMinutes > 0
             tamperGated = delayConfig.requireTamperProtectionOff && current.antiUninstallConfig2.isEnabled
             if ((!timeGateActive && !tamperGated) ||
                 RestrictionComparator.isSameOrStricter(field, current, proposed)
@@ -737,7 +787,6 @@ class DataStoreManager(private val context: Context) {
                 val now = System.currentTimeMillis()
                 // With no active timer, the pending value is due the instant tamper protection
                 // turns off; applyDuePendingChanges re-checks that condition on every sweep.
-                val delayMinutes = delayConfig.delayMinutes.coerceIn(0, SettingsChangeDelayConfig.MAX_DELAY_MINUTES)
                 val kept = keepablePendingTimer(field, current, existingPending, proposed)
                 keptTimer = kept != null
                 deferredUntilMs = kept?.appliesAtMs ?: if (timeGateActive) now + delayMinutes * 60_000L else now
@@ -801,6 +850,10 @@ class DataStoreManager(private val context: Context) {
     }.getOrNull()
 
     private fun applyPendingValue(settings: Settings, change: PendingSettingsChange): Settings? {
+        if (change.field == GatedSettingsField.APP_GROUPS.name && change.itemId.isNotEmpty()) {
+            val groups = AppGroupGate.applyPending(settings.blockedAppGroups, change, gson) ?: return null
+            return settings.copy(blockedAppGroups = groups)
+        }
         val field = runCatching { GatedSettingsField.valueOf(change.field) }.getOrNull() ?: return null
         return withFieldValue(settings, field, change.newValueJson)
     }
@@ -812,6 +865,14 @@ class DataStoreManager(private val context: Context) {
         }
         return displayed
     }
+
+    /**
+     * How long a weaker change to [field] waits. The app lists wait for the longest delay among
+     * the groups the change loosens; everything else uses the main delay.
+     */
+    private fun gateDelayMinutes(field: GatedSettingsField, current: Settings, proposed: Settings): Int =
+        if (field == GatedSettingsField.APP_LISTS) AppGroupGate.appListsDelayMinutes(current, proposed)
+        else RestrictionComparator.mainDelayMinutes(current.settingsChangeDelayConfig2)
 
     private suspend fun schedulePendingChanges() {
         val current = settingsDataStore.data.first()
@@ -922,7 +983,8 @@ class DataStoreManager(private val context: Context) {
         appliesAtMs: Long,
         replacedExisting: Boolean,
         tamperGated: Boolean,
-        keptTimer: Boolean = false
+        keptTimer: Boolean = false,
+        itemId: String = ""
     ) {
         val appContext = context.applicationContext
         Handler(Looper.getMainLooper()).post {
@@ -934,6 +996,7 @@ class DataStoreManager(private val context: Context) {
                     putExtra(neth.iecal.curbox.ui.activity.PendingChangeReviewActivity.EXTRA_REPLACED_EXISTING, replacedExisting)
                     putExtra(neth.iecal.curbox.ui.activity.PendingChangeReviewActivity.EXTRA_TAMPER_GATED, tamperGated)
                     putExtra(neth.iecal.curbox.ui.activity.PendingChangeReviewActivity.EXTRA_KEPT_TIMER, keptTimer)
+                    putExtra(neth.iecal.curbox.ui.activity.PendingChangeReviewActivity.EXTRA_ITEM_ID, itemId)
                 }
                 appContext.startActivity(intent)
             } catch (e: Exception) {

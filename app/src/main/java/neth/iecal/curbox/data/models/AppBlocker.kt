@@ -24,6 +24,11 @@ data class AppGroup(
      * so an auto-added app the user later removes from the group stays removed.
      */
     val autoAddCheckedUntilMs: Long = 0L,
+    /**
+     * This group's own settings change delay in minutes. Null uses the main delay. Unlike the
+     * main delay, it applies even while the main delay is switched off.
+     */
+    val changeDelayMinutes: Int? = null,
     // Kept only so settings written by older versions can be migrated.
     @Deprecated("Use config")
     val blockingType: AppBlockingType = AppBlockingType.Usage, // "USAGE" or "TIME"

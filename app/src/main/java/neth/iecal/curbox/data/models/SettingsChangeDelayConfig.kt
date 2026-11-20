@@ -29,6 +29,12 @@ enum class GatedSettingsField {
  */
 data class PendingSettingsChange(
     val field: String = "",
+    /**
+     * Set for an [GatedSettingsField.APP_GROUPS] change that belongs to one group: the group's
+     * id. Each group then waits on its own timer, and [newValueJson] holds just that group,
+     * or is empty when the group is being deleted. See [neth.iecal.curbox.utils.AppGroupGate].
+     */
+    val itemId: String = "",
     val newValueJson: String = "",
     val requestedAtMs: Long = 0L,
     val appliesAtMs: Long = 0L

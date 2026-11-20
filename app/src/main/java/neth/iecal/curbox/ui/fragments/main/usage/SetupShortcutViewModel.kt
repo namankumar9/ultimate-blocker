@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import neth.iecal.curbox.data.models.Settings
 import neth.iecal.curbox.utils.DataStoreManager
@@ -28,7 +29,8 @@ class SetupShortcutViewModel(application: Application) : AndroidViewModel(applic
     
     fun toggleAppGroup(groupId: String, isActive: Boolean) {
         viewModelScope.launch {
-            val currentSettings = _settings.value ?: return@launch
+            // Edit on top of waiting changes, like the app's own editors, so they are kept.
+            val currentSettings = dataStoreManager.settingsForEditing.first()
             val updatedGroups = currentSettings.blockedAppGroups.map {
                 if (it.id == groupId) it.copy(isActive = isActive) else it
             }

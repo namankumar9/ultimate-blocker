@@ -29,10 +29,14 @@ class PendingChangeReviewActivity : AppCompatActivity() {
         const val EXTRA_REPLACED_EXISTING = "replaced_existing"
         const val EXTRA_TAMPER_GATED = "tamper_gated"
         const val EXTRA_KEPT_TIMER = "kept_timer"
+        /** The App Pause group the change belongs to, or empty for a whole setting. */
+        const val EXTRA_ITEM_ID = "item_id"
     }
 
     private var dialog: AlertDialog? = null
     private var fieldName = ""
+    private var itemId = ""
+    private var label = ""
     private var appliesAtMs = 0L
     private var replacedExisting = false
     private var tamperGated = false
@@ -59,10 +63,11 @@ class PendingChangeReviewActivity : AppCompatActivity() {
         lifecycleScope.launch {
             DataStoreManager(applicationContext).settings.collect { settings ->
                 val pending = settings.settingsChangeDelayConfig2.pendingChanges
-                    .find { it.field == fieldName }
+                    .find { it.field == fieldName && it.itemId == itemId }
                 if (pending == null || pending.appliesAtMs != appliesAtMs) {
                     finish()
                 } else {
+                    label = SettingsChangeDelayUtils.changeLabel(this@PendingChangeReviewActivity, pending, settings)
                     tamperGated = settings.settingsChangeDelayConfig2.requireTamperProtectionOff &&
                         settings.antiUninstallConfig2.isEnabled
                     dialog?.setMessage(buildMessage())
@@ -80,6 +85,8 @@ class PendingChangeReviewActivity : AppCompatActivity() {
 
     private fun readExtras(intent: Intent) {
         fieldName = intent.getStringExtra(EXTRA_FIELD) ?: ""
+        itemId = intent.getStringExtra(EXTRA_ITEM_ID) ?: ""
+        label = SettingsChangeDelayUtils.fieldLabel(this, fieldName)
         appliesAtMs = intent.getLongExtra(EXTRA_APPLIES_AT_MS, 0L)
         replacedExisting = intent.getBooleanExtra(EXTRA_REPLACED_EXISTING, false)
         tamperGated = intent.getBooleanExtra(EXTRA_TAMPER_GATED, false)
@@ -87,7 +94,6 @@ class PendingChangeReviewActivity : AppCompatActivity() {
     }
 
     private fun buildMessage(): String {
-        val label = SettingsChangeDelayUtils.fieldLabel(this, fieldName)
         val remaining = appliesAtMs - System.currentTimeMillis()
         var message = if (remaining > 0) {
             getString(
@@ -122,9 +128,10 @@ class PendingChangeReviewActivity : AppCompatActivity() {
 
     private fun undoChange() {
         val field = fieldName
+        val item = itemId
         lifecycleScope.launch {
             try {
-                DataStoreManager(applicationContext).cancelPendingSettingsChange(field, appliesAtMs)
+                DataStoreManager(applicationContext).cancelPendingSettingsChange(field, appliesAtMs, item)
                 Toast.makeText(applicationContext, R.string.change_delay_cancelled_toast, Toast.LENGTH_SHORT).show()
             } catch (e: CancellationException) {
                 throw e

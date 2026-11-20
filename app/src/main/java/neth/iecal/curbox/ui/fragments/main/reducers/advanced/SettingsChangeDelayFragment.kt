@@ -50,6 +50,7 @@ class SettingsChangeDelayFragment : Fragment() {
     private var liveRequireTamperProtectionOff = false
     private var antiUninstallEnabled = false
     private var pendingChanges: List<PendingSettingsChange> = emptyList()
+    private var settingsForLabels: neth.iecal.curbox.data.models.Settings? = null
     private var renderedPendingKey = ""
     private val countdownViews = mutableMapOf<String, TextView>()
     private var isRendering = false
@@ -128,6 +129,8 @@ class SettingsChangeDelayFragment : Fragment() {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
                     dataStore.settings.collect { settings ->
+                        // Live settings still hold a group whose deletion is waiting.
+                        settingsForLabels = settings
                         liveRequireTamperProtectionOff = settings.settingsChangeDelayConfig2.requireTamperProtectionOff
                         antiUninstallEnabled = settings.antiUninstallConfig2.isEnabled
                         tick()
@@ -196,7 +199,7 @@ class SettingsChangeDelayFragment : Fragment() {
 
         // Rows are only rebuilt when the set of waiting changes moves; the ticker
         // just refreshes the countdown text in place
-        val key = pendingChanges.joinToString { "${it.field}@${it.appliesAtMs}" }
+        val key = pendingChanges.joinToString { "${rowKey(it)}@${it.appliesAtMs}" }
         if (key == renderedPendingKey) return
         renderedPendingKey = key
 
@@ -205,8 +208,8 @@ class SettingsChangeDelayFragment : Fragment() {
         pendingChanges.forEach { change ->
             val row = layoutInflater.inflate(R.layout.item_pending_settings_change, containerPending, false)
             row.findViewById<TextView>(R.id.text_pending_name).text =
-                SettingsChangeDelayUtils.fieldLabel(requireContext(), change.field)
-            countdownViews[change.field] = row.findViewById(R.id.text_pending_countdown)
+                SettingsChangeDelayUtils.changeLabel(requireContext(), change, settingsForLabels)
+            countdownViews[rowKey(change)] = row.findViewById(R.id.text_pending_countdown)
             row.findViewById<MaterialButton>(R.id.btn_cancel_pending).setOnClickListener {
                 cancelPending(change)
             }
@@ -223,7 +226,7 @@ class SettingsChangeDelayFragment : Fragment() {
         pendingChanges.forEach { change ->
             val remaining = change.appliesAtMs - now
             if (remaining <= 0 && !tamperBlocked) anyDue = true
-            countdownViews[change.field]?.text = if (tamperBlocked) {
+            countdownViews[rowKey(change)]?.text = if (tamperBlocked) {
                 getString(R.string.change_delay_blocked_by_tamper)
             } else {
                 getString(
@@ -241,12 +244,15 @@ class SettingsChangeDelayFragment : Fragment() {
 
     private fun cancelPending(change: PendingSettingsChange) {
         viewLifecycleOwner.lifecycleScope.launch {
-            dataStore.cancelPendingSettingsChange(change.field, change.appliesAtMs)
+            dataStore.cancelPendingSettingsChange(change.field, change.appliesAtMs, change.itemId)
             if (isAdded) {
                 Toast.makeText(requireContext(), R.string.change_delay_cancelled_toast, Toast.LENGTH_SHORT).show()
             }
         }
     }
+
+    /** App Pause groups can each have a change waiting, so the field alone is not unique. */
+    private fun rowKey(change: PendingSettingsChange) = "${change.field}/${change.itemId}"
 
     override fun onDestroyView() {
         ticker.removeCallbacks(tickRunnable)

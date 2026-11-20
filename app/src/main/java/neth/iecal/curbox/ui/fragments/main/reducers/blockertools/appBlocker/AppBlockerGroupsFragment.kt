@@ -221,7 +221,9 @@ class AppBlockerGroupsFragment : Fragment() {
                     }
                 } else if (!isChecked &&
                     group.isActive &&
-                    viewModel.temporaryDisableAvailable.value
+                    viewModel.temporaryDisableAvailable.value &&
+                    // A group with its own delay must wait it out, like any other change.
+                    (group.changeDelayMinutes ?: 0) == 0
                 ) {
                     holder.switchActive.setOnCheckedChangeListener(null)
                     holder.switchActive.isChecked = true

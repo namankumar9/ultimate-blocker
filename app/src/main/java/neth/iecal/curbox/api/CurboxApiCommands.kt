@@ -258,7 +258,8 @@ object CurboxApiCommands {
     }
 
     private suspend fun setAppBlockerGroup(context: Context, dataStore: DataStoreManager, groupId: String, enable: Boolean) {
-        val settings = dataStore.settings.first()
+        // Edit on top of waiting changes, like the app's own editors, so they are kept.
+        val settings = dataStore.settingsForEditing.first()
         require(settings.blockedAppGroups.any { it.id == groupId }) {
             "Unknown app blocker group: $groupId"
         }

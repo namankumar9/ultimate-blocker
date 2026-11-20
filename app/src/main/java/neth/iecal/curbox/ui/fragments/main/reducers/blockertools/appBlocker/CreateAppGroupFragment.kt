@@ -40,6 +40,8 @@ class CreateAppGroupFragment : Fragment() {
     private var selectedActivities: ArrayList<String> = arrayListOf()
     private var isPrefilled = false
     private var autoAddNewApps = false
+    /** This group's own settings change delay. Null uses the main delay. */
+    private var changeDelayMinutes: Int? = null
     private val viewModel: AppBlockerSettingViewModel by activityViewModels()
 
     private val selectAppsLauncher = registerForActivityResult(
@@ -97,7 +99,9 @@ class CreateAppGroupFragment : Fragment() {
                         selectedListIds = ArrayList(group.appListIds)
                         selectedActivities = ArrayList(group.selectedActivities)
                         autoAddNewApps = group.autoAddNewApps
+                        changeDelayMinutes = group.changeDelayMinutes
                         updateSelectAppsButton()
+                        updateChangeDelayButton()
 
                         binding.btnDeleteGroup.visibility = View.VISIBLE
                         binding.btnDeleteGroup.setOnClickListener {
@@ -120,6 +124,8 @@ class CreateAppGroupFragment : Fragment() {
         }
 
         binding.btnSelectApps.setOnClickListener { openAppSelector() }
+        binding.btnGroupChangeDelay.setOnClickListener { pickChangeDelay() }
+        updateChangeDelayButton()
 
         binding.btnConfigureSchedule.setOnClickListener { openScheduleEditor() }
         binding.btnConfigureUsage.setOnClickListener { openUsageEditor() }
@@ -189,6 +195,7 @@ class CreateAppGroupFragment : Fragment() {
             temporarilyDisabledUntilMs = targetExistingGroup?.temporarilyDisabledUntilMs ?: 0L,
             warningScreenConfig = viewModel.warningScrnConfig,
             autoAddNewApps = autoAddNewApps,
+            changeDelayMinutes = changeDelayMinutes,
             // Turning auto-add on only covers apps installed from now on.
             autoAddCheckedUntilMs =
                 if (autoAddNewApps && targetExistingGroup?.autoAddNewApps == true) targetExistingGroup.autoAddCheckedUntilMs
@@ -267,6 +274,45 @@ class CreateAppGroupFragment : Fragment() {
             withLists,
             resources.getQuantityString(R.plurals.activity_count, selectedActivities.size, selectedActivities.size)
         )
+    }
+
+    // Null is "same as the main delay"; the rest match the main delay's choices.
+    private val changeDelayChoices = listOf<Pair<Int?, Int>>(
+        null to R.string.group_change_delay_main,
+        0 to R.string.change_delay_none,
+        10 to R.string.change_delay_10m,
+        60 to R.string.change_delay_1h,
+        240 to R.string.change_delay_4h,
+        720 to R.string.change_delay_12h,
+        1440 to R.string.change_delay_1d,
+        2880 to R.string.change_delay_2d,
+    )
+
+    private fun changeDelayLabel(minutes: Int?): String {
+        val label = changeDelayChoices.find { it.first == minutes }?.second
+        return if (label != null) getString(label)
+        else getString(R.string.group_change_delay_minutes, minutes ?: 0)
+    }
+
+    private fun updateChangeDelayButton() {
+        if (_binding == null) return
+        binding.btnGroupChangeDelay.text =
+            if (changeDelayMinutes == null) getString(R.string.group_change_delay_main)
+            else getString(R.string.group_change_delay_own, changeDelayLabel(changeDelayMinutes))
+    }
+
+    private fun pickChangeDelay() {
+        val labels = changeDelayChoices.map { getString(it.second) }.toTypedArray()
+        val checked = changeDelayChoices.indexOfFirst { it.first == changeDelayMinutes }
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.group_change_delay_dialog_title)
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                changeDelayMinutes = changeDelayChoices[which].first
+                updateChangeDelayButton()
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun openScheduleEditor() {

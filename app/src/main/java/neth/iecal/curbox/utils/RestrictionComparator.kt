@@ -44,11 +44,13 @@ object RestrictionComparator {
             when (field) {
                 GatedSettingsField.APP_GROUPS ->
                     appGroups(current.blockedAppGroups, proposed.blockedAppGroups,
-                        current.appLists, proposed.appLists)
+                        current.appLists, proposed.appLists,
+                        mainDelayMinutes(current.settingsChangeDelayConfig2))
                 // A list edit is judged by what it does to the groups that use it.
                 GatedSettingsField.APP_LISTS ->
                     appGroups(current.blockedAppGroups, proposed.blockedAppGroups,
-                        current.appLists, proposed.appLists)
+                        current.appLists, proposed.appLists,
+                        mainDelayMinutes(current.settingsChangeDelayConfig2))
                 GatedSettingsField.AUTO_DND_GROUPS ->
                     autoDndGroups(current.autoDndGroups, proposed.autoDndGroups)
                 GatedSettingsField.REEL_BLOCKER ->
@@ -91,21 +93,39 @@ object RestrictionComparator {
         return timeOk && tamperGateOk
     }
 
+    /** The main delay in force, in minutes: 0 while it is switched off. */
+    fun mainDelayMinutes(config: SettingsChangeDelayConfig): Int =
+        if (config.isEnabled) config.delayMinutes.coerceIn(0, SettingsChangeDelayConfig.MAX_DELAY_MINUTES) else 0
+
+    /** How long a change that loosens [group] waits: its own delay, else the main one. */
+    fun groupDelayMinutes(group: AppGroup, mainDelayMinutes: Int): Int =
+        (group.changeDelayMinutes ?: mainDelayMinutes).coerceIn(0, SettingsChangeDelayConfig.MAX_DELAY_MINUTES)
+
+    /** [mainDelayMinutes] is what groups without their own delay wait. */
     fun appGroups(
         old: List<AppGroup>,
         new: List<AppGroup>,
         oldLists: List<AppList> = emptyList(),
         newLists: List<AppList> = oldLists,
+        mainDelayMinutes: Int = 0,
     ): Boolean {
         return old.filter { it.isActive || it.temporarilyDisabledUntilMs > 0L }.all { o ->
             val n = new.find { it.id == o.id } ?: return@all false
-            appGroup(o, n, oldLists, newLists)
+            appGroup(o, n, oldLists, newLists, mainDelayMinutes)
         }
     }
 
-    private fun appGroup(o: AppGroup, n: AppGroup, oldLists: List<AppList>, newLists: List<AppList>): Boolean {
+    private fun appGroup(
+        o: AppGroup,
+        n: AppGroup,
+        oldLists: List<AppList>,
+        newLists: List<AppList>,
+        mainDelayMinutes: Int,
+    ): Boolean {
         if (!temporaryDisableSameOrShorter(o.isActive, o.temporarilyDisabledUntilMs,
                 n.isActive, n.temporarilyDisabledUntilMs)) return false
+        // A shorter wait on this group's own changes is a loosening, like a shorter main delay.
+        if (groupDelayMinutes(n, mainDelayMinutes) < groupDelayMinutes(o, mainDelayMinutes)) return false
         // Apps can come from the group itself or from linked lists. Dropping an app either
         // way, unlinking a list, or deleting one all shrink this set.
         val newPackages = n.allPackages(newLists)

@@ -640,6 +640,13 @@
     <string name="change_delay_pending_note">If you make a stricter change to the same tool while a change is waiting, the waiting change is removed.</string>
     <string name="change_delay_help_popup">When enabled, changes that weaken a rule wait before they apply. This gives you time to reconsider them.</string>
     <string name="change_delay_field_app_groups">App blocker</string>
+    <string name="change_delay_field_app_group_named">App blocker group \"%1$s\"</string>
+    <string name="group_change_delay_section_title">CHANGE DELAY</string>
+    <string name="group_change_delay_main">Same as Settings change delay</string>
+    <string name="group_change_delay_own">Changes wait: %1$s</string>
+    <string name="group_change_delay_minutes">%1$d minutes</string>
+    <string name="group_change_delay_dialog_title">How long do weaker changes to this group wait?</string>
+    <string name="group_change_delay_hint">Making this group weaker, like turning it off, waits this long. It works even when Settings change delay is off. Picking a shorter wait also has to wait.</string>
     <string name="change_delay_field_app_lists">App lists</string>
     <string name="change_delay_field_auto_dnd">Auto DND</string>
     <string name="change_delay_field_reel_blocker">Reel blocker</string>

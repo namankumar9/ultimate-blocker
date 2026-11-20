@@ -8,7 +8,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import neth.iecal.curbox.CrashLogger
 import neth.iecal.curbox.R
+import com.google.gson.Gson
 import neth.iecal.curbox.data.models.GatedSettingsField
+import neth.iecal.curbox.data.models.PendingSettingsChange
 import neth.iecal.curbox.data.models.Settings
 
 internal fun Settings.restoreExpiredTemporaryDisables(nowMs: Long): Settings = copy(
@@ -69,6 +71,16 @@ object SettingsChangeDelayUtils {
                 GatedSettingsField.CHANGE_DELAY, null -> R.string.change_delay_field_change_delay
             }
         )
+    }
+
+    /** Like [fieldLabel], but names the group when the change belongs to one App Pause group. */
+    fun changeLabel(context: Context, change: PendingSettingsChange, settings: Settings?): String {
+        if (change.field == GatedSettingsField.APP_GROUPS.name && change.itemId.isNotEmpty()) {
+            val name = AppGroupGate.parseGroup(change.newValueJson, Gson())?.name
+                ?: settings?.blockedAppGroups?.find { it.id == change.itemId }?.name
+            if (name != null) return context.getString(R.string.change_delay_field_app_group_named, name)
+        }
+        return fieldLabel(context, change.field)
     }
 
     fun formatRemaining(context: Context, remainingMs: Long): String {
