@@ -168,9 +168,39 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:layout_marginBottom="100dp"
+                android:layout_marginBottom="24dp"
                 android:layout_marginHorizontal="8dp"
                 android:text="@string/group_change_delay_hint"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="13sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:letterSpacing="0.1"
+                android:text="@string/group_password_section_title_caps"
+                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_group_password"
+                android:layout_width="match_parent"
+                android:layout_height="60dp"
+                android:text="@string/group_password_none"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                app:backgroundTint="?attr/colorSurfaceContainer"
+                app:cornerRadius="16dp"
+                app:icon="@drawable/baseline_lock_24"
+                app:iconTint="?attr/colorOnSurfaceVariant" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="100dp"
+                android:layout_marginHorizontal="8dp"
+                android:text="@string/group_password_editor_hint"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:textSize="13sp" />
 

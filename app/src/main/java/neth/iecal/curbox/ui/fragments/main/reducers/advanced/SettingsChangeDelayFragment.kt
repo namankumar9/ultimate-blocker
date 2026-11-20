@@ -131,6 +131,7 @@ class SettingsChangeDelayFragment : Fragment() {
                     dataStore.settings.collect { settings ->
                         // Live settings still hold a group whose deletion is waiting.
                         settingsForLabels = settings
+                        renderPendingList()
                         liveRequireTamperProtectionOff = settings.settingsChangeDelayConfig2.requireTamperProtectionOff
                         antiUninstallEnabled = settings.antiUninstallConfig2.isEnabled
                         tick()
@@ -199,7 +200,9 @@ class SettingsChangeDelayFragment : Fragment() {
 
         // Rows are only rebuilt when the set of waiting changes moves; the ticker
         // just refreshes the countdown text in place
-        val key = pendingChanges.joinToString { "${rowKey(it)}@${it.appliesAtMs}" }
+        val key = pendingChanges.joinToString {
+            "${rowKey(it)}@${it.appliesAtMs}:${groupPasswordHash(it).isNotEmpty()}"
+        }
         if (key == renderedPendingKey) return
         renderedPendingKey = key
 
@@ -212,6 +215,11 @@ class SettingsChangeDelayFragment : Fragment() {
             countdownViews[rowKey(change)] = row.findViewById(R.id.text_pending_countdown)
             row.findViewById<MaterialButton>(R.id.btn_cancel_pending).setOnClickListener {
                 cancelPending(change)
+            }
+            val passwordHash = groupPasswordHash(change)
+            row.findViewById<MaterialButton>(R.id.btn_password_pending).apply {
+                isVisible = passwordHash.isNotEmpty()
+                setOnClickListener { applyWithPassword(change, passwordHash) }
             }
             containerPending.addView(row)
         }
@@ -249,6 +257,26 @@ class SettingsChangeDelayFragment : Fragment() {
                 Toast.makeText(requireContext(), R.string.change_delay_cancelled_toast, Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    /** The live edit password hash of the App Pause group [change] belongs to, else empty. */
+    private fun groupPasswordHash(change: PendingSettingsChange): String =
+        if (change.field != neth.iecal.curbox.data.models.GatedSettingsField.APP_GROUPS.name || change.itemId.isEmpty()) ""
+        else settingsForLabels?.blockedAppGroups?.find { it.id == change.itemId }?.editPasswordHash.orEmpty()
+
+    private fun applyWithPassword(change: PendingSettingsChange, passwordHash: String) {
+        neth.iecal.curbox.utils.GroupPasswordPrompt.show(
+            requireContext(),
+            layoutInflater,
+            passwordHash,
+            getString(R.string.group_password_apply_waiting_message),
+            onPassword = { password ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val result = dataStore.applyWaitingGroupChangeWithPassword(change.itemId, password)
+                    if (isAdded) SettingsChangeDelayUtils.showPasswordApplyResult(requireContext(), result)
+                }
+            },
+        )
     }
 
     /** App Pause groups can each have a change waiting, so the field alone is not unique. */

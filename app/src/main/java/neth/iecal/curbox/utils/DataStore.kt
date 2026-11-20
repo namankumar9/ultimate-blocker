@@ -209,12 +209,18 @@ class DataStoreManager(private val context: Context) {
     /**
      * Saves the app groups as an editor shows them. Each group goes through the settings change
      * delay on its own, with its own wait. See [AppGroupGate].
+     *
+     * [passwords] maps group ids to the edit password the user typed for them. A correct one
+     * lets that group's weaker change apply without waiting.
      */
-    suspend fun updateAppGroups(newGroups: List<AppGroup>): Unit = withContext(Dispatchers.Default) {
+    suspend fun updateAppGroups(
+        newGroups: List<AppGroup>,
+        passwords: Map<String, String> = emptyMap(),
+    ): Unit = withContext(Dispatchers.Default) {
         var outcome = AppGroupGate.Outcome()
         settingsDataStore.updateData { current ->
             val result = AppGroupGate.apply(
-                current, overlayPendingChanges(current), newGroups, System.currentTimeMillis(), gson
+                current, overlayPendingChanges(current), newGroups, System.currentTimeMillis(), gson, passwords
             )
             outcome = result.outcome
             result.settings
@@ -233,6 +239,48 @@ class DataStoreManager(private val context: Context) {
             notifyPendingChangeDropped(field)
         }
     }
+
+    enum class PasswordApplyResult { APPLIED, HELD_BY_TAMPER, WRONG_PASSWORD, NOT_WAITING }
+
+    /**
+     * Lands the waiting change of App Pause group [groupId] now, if [password] is the group's
+     * edit password. "Require tamper protection off" still holds it until tamper protection
+     * is off.
+     */
+    suspend fun applyWaitingGroupChangeWithPassword(groupId: String, password: String): PasswordApplyResult =
+        withContext(Dispatchers.Default) {
+            var result = PasswordApplyResult.NOT_WAITING
+            settingsDataStore.updateData { current ->
+                val config = current.settingsChangeDelayConfig2
+                val pending = config.pendingChanges.find { AppGroupGate.isForGroup(it, groupId) }
+                if (pending == null) {
+                    result = PasswordApplyResult.NOT_WAITING
+                    return@updateData current
+                }
+                if (groupId !in AppGroupGate.unlockedGroups(current, mapOf(groupId to password))) {
+                    result = PasswordApplyResult.WRONG_PASSWORD
+                    return@updateData current
+                }
+                val now = System.currentTimeMillis()
+                if (config.requireTamperProtectionOff && current.antiUninstallConfig2.isEnabled) {
+                    result = PasswordApplyResult.HELD_BY_TAMPER
+                    return@updateData current.copy(settingsChangeDelayConfig2 = config.copy(
+                        pendingChanges = config.pendingChanges.map {
+                            if (it === pending) it.copy(appliesAtMs = minOf(it.appliesAtMs, now)) else it
+                        }
+                    ))
+                }
+                val groups = AppGroupGate.applyPending(current.blockedAppGroups, pending, gson)
+                    ?: return@updateData current
+                result = PasswordApplyResult.APPLIED
+                current.copy(
+                    blockedAppGroups = groups,
+                    settingsChangeDelayConfig2 = config.copy(pendingChanges = config.pendingChanges - pending)
+                )
+            }
+            schedulePendingChanges()
+            result
+        }
 
     suspend fun updateAppLists(newLists: List<neth.iecal.curbox.data.models.AppList>) {
         updateGated(GatedSettingsField.APP_LISTS) { newLists }
@@ -579,16 +627,15 @@ class DataStoreManager(private val context: Context) {
         }
     }
 
-    suspend fun temporarilyDisableAppGroup(groupId: String, durationMinutes: Long): Boolean {
+    /** [password] is the group's edit password, which allows this even while changes wait. */
+    suspend fun temporarilyDisableAppGroup(groupId: String, durationMinutes: Long, password: String? = null): Boolean {
         val untilMs = temporaryDisableDeadline(durationMinutes)
         var changed = false
         var nextDeadline: Long? = null
         settingsDataStore.updateData { current ->
-            if (current.settingsChangeDelayConfig2.isEnabled ||
-                current.settingsChangeDelayConfig2.requireTamperProtectionOff) return@updateData current
             val groups = current.blockedAppGroups.map { group ->
                 if (group.id == groupId && group.isActive &&
-                    AppGroupGate.temporaryDisableAllowed(current.settingsChangeDelayConfig2, group)
+                    AppGroupGate.temporaryDisableAllowed(current.settingsChangeDelayConfig2, group, password)
                 ) {
                     changed = true
                     group.copy(isActive = false, temporarilyDisabledUntilMs = untilMs)

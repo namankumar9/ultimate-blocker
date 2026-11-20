@@ -19,7 +19,10 @@ import neth.iecal.curbox.data.models.AppList
 import neth.iecal.curbox.data.models.allPackages
 import neth.iecal.curbox.data.models.AppTimeConfig
 import neth.iecal.curbox.data.models.AppUsageConfig
+import neth.iecal.curbox.data.models.GatedSettingsField
+import neth.iecal.curbox.utils.AppGroupGate
 import neth.iecal.curbox.utils.DataStoreManager
+import neth.iecal.curbox.utils.RestrictionComparator
 import neth.iecal.curbox.utils.UsageStatsHelper
 import neth.iecal.curbox.utils.activeWindow
 import java.util.Calendar
@@ -88,9 +91,24 @@ class AppBlockerSettingViewModel(application: Application) : AndroidViewModel(ap
         application.sendBroadcast(intent)
     }
 
-    private suspend fun persistGroups(newGroups: List<AppGroup>) {
-        dataStoreManager.updateAppGroups(newGroups)
+    /** [passwords] maps group ids to an edit password the user entered for this save. */
+    private suspend fun persistGroups(newGroups: List<AppGroup>, passwords: Map<String, String> = emptyMap()) {
+        dataStoreManager.updateAppGroups(newGroups, passwords)
         requestAppBlockerRefresh()
+    }
+
+    /** The group as it is enforced now, not as edited. Edit passwords are checked against this. */
+    suspend fun liveGroup(groupId: String): AppGroup? =
+        dataStoreManager.settings.first().blockedAppGroups.find { it.id == groupId }
+
+    /**
+     * True when saving [newGroup] (or deleting the group when null) would loosen the live
+     * group, so it has to wait or needs the group's edit password.
+     */
+    suspend fun loosensGroup(groupId: String, newGroup: AppGroup?): Boolean {
+        val live = dataStoreManager.settings.first()
+        val proposed = live.copy(blockedAppGroups = AppGroupGate.withGroup(live.blockedAppGroups, groupId, newGroup))
+        return !RestrictionComparator.isSameOrStricter(GatedSettingsField.APP_GROUPS, live, proposed)
     }
 
     fun updateGroups(newGroups: List<AppGroup>) = viewModelScope.launch {
@@ -107,13 +125,13 @@ class AppBlockerSettingViewModel(application: Application) : AndroidViewModel(ap
         persistGroups(updatedGroups)
     }
 
-    suspend fun updateGroupById(updatedGroup: AppGroup) {
+    suspend fun updateGroupById(updatedGroup: AppGroup, password: String? = null) {
         val currentSettings = dataStoreManager.settingsForEditing.first()
         val updatedGroups = currentSettings.blockedAppGroups.toMutableList()
         val index = updatedGroups.indexOfFirst { it.id == updatedGroup.id }
         if (index != -1) {
             updatedGroups[index] = updatedGroup
-            persistGroups(updatedGroups)
+            persistGroups(updatedGroups, password?.let { mapOf(updatedGroup.id to it) }.orEmpty())
         }
     }
 
@@ -135,10 +153,10 @@ class AppBlockerSettingViewModel(application: Application) : AndroidViewModel(ap
         persistGroups(updatedGroups)
     }
 
-    suspend fun deleteGroup(groupId: String) {
+    suspend fun deleteGroup(groupId: String, password: String? = null) {
         val currentSettings = dataStoreManager.settingsForEditing.first()
         val updatedGroups = currentSettings.blockedAppGroups.filterNot { it.id == groupId }
-        persistGroups(updatedGroups)
+        persistGroups(updatedGroups, password?.let { mapOf(groupId to it) }.orEmpty())
     }
 
     /** Adds the list, or replaces the one with the same id. Removing apps may be delayed. */
@@ -179,9 +197,9 @@ class AppBlockerSettingViewModel(application: Application) : AndroidViewModel(ap
         }
     }
 
-    fun temporarilyDisableGroup(groupId: String, durationMinutes: Long) {
+    fun temporarilyDisableGroup(groupId: String, durationMinutes: Long, password: String? = null) {
         viewModelScope.launch {
-            if (dataStoreManager.temporarilyDisableAppGroup(groupId, durationMinutes)) {
+            if (dataStoreManager.temporarilyDisableAppGroup(groupId, durationMinutes, password)) {
                 requestAppBlockerRefresh()
             }
         }

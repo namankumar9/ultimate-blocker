@@ -37,6 +37,8 @@ class PendingChangeReviewActivity : AppCompatActivity() {
     private var fieldName = ""
     private var itemId = ""
     private var label = ""
+    /** Live edit password hash of the App Pause group this change belongs to, else empty. */
+    private var passwordHash = ""
     private var appliesAtMs = 0L
     private var replacedExisting = false
     private var tamperGated = false
@@ -68,6 +70,12 @@ class PendingChangeReviewActivity : AppCompatActivity() {
                     finish()
                 } else {
                     label = SettingsChangeDelayUtils.changeLabel(this@PendingChangeReviewActivity, pending, settings)
+                    val hash = if (itemId.isEmpty()) "" else
+                        settings.blockedAppGroups.find { it.id == itemId }?.editPasswordHash.orEmpty()
+                    if (hash != passwordHash) {
+                        passwordHash = hash
+                        showDialog()
+                    }
                     tamperGated = settings.settingsChangeDelayConfig2.requireTamperProtectionOff &&
                         settings.antiUninstallConfig2.isEnabled
                     dialog?.setMessage(buildMessage())
@@ -122,8 +130,40 @@ class PendingChangeReviewActivity : AppCompatActivity() {
             .setMessage(buildMessage())
             .setPositiveButton(R.string.change_delay_review_keep) { _, _ -> finish() }
             .setNegativeButton(R.string.change_delay_review_undo) { _, _ -> undoChange() }
+            .apply {
+                if (passwordHash.isNotEmpty()) {
+                    setNeutralButton(R.string.group_password_apply_now) { _, _ -> applyWithPassword() }
+                }
+            }
             .setOnCancelListener { finish() }
             .show()
+    }
+
+    private fun applyWithPassword() {
+        val hash = passwordHash
+        val item = itemId
+        neth.iecal.curbox.utils.GroupPasswordPrompt.show(
+            this,
+            layoutInflater,
+            hash,
+            getString(R.string.group_password_apply_waiting_message),
+            onPassword = { password ->
+                lifecycleScope.launch {
+                    try {
+                        val result = DataStoreManager(applicationContext)
+                            .applyWaitingGroupChangeWithPassword(item, password)
+                        SettingsChangeDelayUtils.showPasswordApplyResult(applicationContext, result)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        CrashLogger(applicationContext).logNonFatalError(e)
+                    }
+                    finish()
+                }
+            },
+            // Back to the review, where the change keeps waiting.
+            onCancel = { showDialog() },
+        )
     }
 
     private fun undoChange() {

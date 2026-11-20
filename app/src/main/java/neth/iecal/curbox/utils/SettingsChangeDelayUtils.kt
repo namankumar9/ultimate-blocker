@@ -83,6 +83,16 @@ object SettingsChangeDelayUtils {
         return fieldLabel(context, change.field)
     }
 
+    fun showPasswordApplyResult(context: Context, result: DataStoreManager.PasswordApplyResult) {
+        val message = when (result) {
+            DataStoreManager.PasswordApplyResult.APPLIED -> R.string.group_password_applied
+            DataStoreManager.PasswordApplyResult.HELD_BY_TAMPER -> R.string.group_password_held_by_tamper
+            DataStoreManager.PasswordApplyResult.WRONG_PASSWORD -> R.string.anti_uninstall_wrong_password
+            DataStoreManager.PasswordApplyResult.NOT_WAITING -> R.string.group_password_not_waiting
+        }
+        android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
     fun formatRemaining(context: Context, remainingMs: Long): String {
         val totalSeconds = (remainingMs / 1000).coerceAtLeast(0)
         val days = totalSeconds / 86_400

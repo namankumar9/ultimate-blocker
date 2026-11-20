@@ -45,8 +45,19 @@ object AppGroupGate {
      * Gates a full list of groups as an editor saved it. [overlay] is what the editor showed:
      * [current] with every waiting change applied. Groups equal to their [overlay] value are
      * left alone, so an edit to one group never touches another group's waiting change.
+     *
+     * [passwords] maps group ids to an edit password the user typed. A group whose live
+     * password matches skips its wait, see [unlockedGroups].
      */
-    fun apply(current: Settings, overlay: Settings, newGroups: List<AppGroup>, nowMs: Long, gson: Gson): Result {
+    fun apply(
+        current: Settings,
+        overlay: Settings,
+        newGroups: List<AppGroup>,
+        nowMs: Long,
+        gson: Gson,
+        passwords: Map<String, String> = emptyMap(),
+    ): Result {
+        val unlocked = unlockedGroups(current, passwords)
         val before = overlay.blockedAppGroups.associateBy { it.id }
         val after = newGroups.associateBy { it.id }
         val ids = (newGroups.map { it.id } + overlay.blockedAppGroups.map { it.id }).distinct()
@@ -56,7 +67,7 @@ object AppGroupGate {
             val newJson = after[id]?.let(gson::toJson) ?: ""
             val beforeJson = before[id]?.let(gson::toJson) ?: ""
             if (newJson == beforeJson) continue
-            val step = applyOne(settings, id, beforeJson, newJson, nowMs, gson)
+            val step = applyOne(settings, id, beforeJson, newJson, nowMs, gson, id in unlocked)
             settings = step.settings
             // One editor save changes one group. Keep the most telling notice if there are more.
             outcome = mergeOutcomes(outcome, step.outcome)
@@ -73,7 +84,21 @@ object AppGroupGate {
         tamperGated = a.tamperGated || b.tamperGated,
     )
 
-    /** Gates the edit of group [id] from [beforeJson] to [newJson] ("" means no group). */
+    /**
+     * The groups whose edit password is in [passwords]. Checked against the live group, so a
+     * password change that is still waiting can't be used before it lands.
+     */
+    fun unlockedGroups(current: Settings, passwords: Map<String, String>): Set<String> =
+        current.blockedAppGroups.filter { group ->
+            group.editPasswordHash.isNotEmpty() &&
+                passwords[group.id]?.let { WarningPassword.verify(it, group.editPasswordHash) } == true
+        }.map { it.id }.toSet()
+
+    /**
+     * Gates the edit of group [id] from [beforeJson] to [newJson] ("" means no group).
+     * [unlocked] means the user entered the group's edit password: the wait is skipped, but
+     * "require tamper protection off" still holds the change.
+     */
     private fun applyOne(
         current: Settings,
         id: String,
@@ -81,6 +106,7 @@ object AppGroupGate {
         newJson: String,
         nowMs: Long,
         gson: Gson,
+        unlocked: Boolean = false,
     ): Result {
         val delayConfig = current.settingsChangeDelayConfig2
         val existing = delayConfig.pendingChanges.find { isForGroup(it, id) }
@@ -91,7 +117,7 @@ object AppGroupGate {
         if (newJson.isNotEmpty() && newGroup == null) return Result(current, Outcome())
         val proposed = current.copy(blockedAppGroups = withGroup(current.blockedAppGroups, id, newGroup))
         val mainDelay = RestrictionComparator.mainDelayMinutes(delayConfig)
-        val delay = live?.let { RestrictionComparator.groupDelayMinutes(it, mainDelay) } ?: 0
+        val delay = if (unlocked) 0 else live?.let { RestrictionComparator.groupDelayMinutes(it, mainDelay) } ?: 0
         val tamperGated = delayConfig.requireTamperProtectionOff && current.antiUninstallConfig2.isEnabled
 
         if ((delay == 0 && !tamperGated) || isSameOrStricter(current, proposed)) {
@@ -111,7 +137,8 @@ object AppGroupGate {
         val waiting = existing?.let {
             current.copy(blockedAppGroups = withGroup(current.blockedAppGroups, id, parseGroup(it.newValueJson, gson)))
         }
-        val kept = existing?.takeIf { waiting != null && isSameOrStricter(waiting, proposed) }
+        // With the password the only thing left to wait for is tamper protection.
+        val kept = existing?.takeIf { !unlocked && waiting != null && isSameOrStricter(waiting, proposed) }
         val appliesAt = kept?.appliesAtMs ?: (nowMs + delay * 60_000L)
         val pending = PendingSettingsChange(
             field = GatedSettingsField.APP_GROUPS.name,
@@ -215,7 +242,15 @@ object AppGroupGate {
             ?: mainDelay
     }
 
-    /** True when temporary disable may be offered for [group]: nothing makes its changes wait. */
-    fun temporaryDisableAllowed(config: SettingsChangeDelayConfig, group: AppGroup): Boolean =
-        !config.isEnabled && !config.requireTamperProtectionOff && (group.changeDelayMinutes ?: 0) == 0
+    /**
+     * True when temporary disable may be offered for [group]: nothing makes its changes wait,
+     * or [passwordEntered] is its edit password.
+     */
+    fun temporaryDisableAllowed(config: SettingsChangeDelayConfig, group: AppGroup, passwordEntered: String? = null): Boolean {
+        if (config.requireTamperProtectionOff) return false
+        if (passwordEntered != null && group.editPasswordHash.isNotEmpty()) {
+            return WarningPassword.verify(passwordEntered, group.editPasswordHash)
+        }
+        return !config.isEnabled && (group.changeDelayMinutes ?: 0) == 0 && group.editPasswordHash.isEmpty()
+    }
 }

@@ -29,6 +29,12 @@ data class AppGroup(
      * main delay, it applies even while the main delay is switched off.
      */
     val changeDelayMinutes: Int? = null,
+    /**
+     * "salt:hash" of this group's edit password, empty when it has none. Entering it lets a
+     * weaker change apply at once instead of waiting out the delay. See
+     * [neth.iecal.curbox.utils.WarningPassword] for the format.
+     */
+    val editPasswordHash: String = "",
     // Kept only so settings written by older versions can be migrated.
     @Deprecated("Use config")
     val blockingType: AppBlockingType = AppBlockingType.Usage, // "USAGE" or "TIME"

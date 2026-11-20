@@ -20,8 +20,16 @@ class AppGroupGateTest {
     private val now = 1_000_000L
     private val minute = 60_000L
 
-    private fun group(id: String, delay: Int? = null, limit: Long = 30, active: Boolean = true, lists: List<String> = emptyList()) =
+    private fun group(
+        id: String,
+        delay: Int? = null,
+        limit: Long = 30,
+        active: Boolean = true,
+        lists: List<String> = emptyList(),
+        passwordHash: String = "",
+    ) =
         AppGroup(
+            editPasswordHash = passwordHash,
             id = id,
             name = id,
             selectedPackages = listOf("$id.app"),
@@ -38,11 +46,20 @@ class AppGroupGateTest {
     )
 
     /** Saves [edit] applied to the groups as the editor shows them, like [DataStoreManager.updateAppGroups]. */
-    private fun save(current: Settings, at: Long = now, edit: (List<AppGroup>) -> List<AppGroup>): AppGroupGate.Result {
+    private fun save(
+        current: Settings,
+        at: Long = now,
+        passwords: Map<String, String> = emptyMap(),
+        edit: (List<AppGroup>) -> List<AppGroup>,
+    ): AppGroupGate.Result {
         val overlay = current.copy(blockedAppGroups = current.settingsChangeDelayConfig2.pendingChanges
             .fold(current.blockedAppGroups) { groups, change -> AppGroupGate.applyPending(groups, change, gson)!! })
-        return AppGroupGate.apply(current, overlay, edit(overlay.blockedAppGroups), at, gson)
+        return AppGroupGate.apply(current, overlay, edit(overlay.blockedAppGroups), at, gson, passwords)
     }
+
+    private val secret = WarningPassword.hash("secret")
+    private val maxWait = SettingsChangeDelayConfig.MAX_DELAY_MINUTES * minute
+    private fun turnOff(groups: List<AppGroup>) = groups.edit("a") { it.copy(isActive = false) }
 
     private fun Settings.pending(id: String) =
         settingsChangeDelayConfig2.pendingChanges.find { AppGroupGate.isForGroup(it, id) }
@@ -201,5 +218,97 @@ class AppGroupGateTest {
         assertTrue(split.all { it.appliesAtMs == 9L && it.requestedAtMs == 5L })
         assertFalse(AppGroupGate.parseGroup(split[0].newValueJson, gson)!!.isActive)
         assertEquals("", split[1].newValueJson)
+    }
+
+    @Test
+    fun theEditPasswordSkipsTheWait() {
+        val s = save(settings(group("a", delay = 120, passwordHash = secret)), passwords = mapOf("a" to "secret"), edit = ::turnOff).settings
+        assertFalse(s.blockedAppGroups.single().isActive)
+        assertNull(s.pending("a"))
+    }
+
+    @Test
+    fun aWrongPasswordStillWaits() {
+        val s = save(settings(group("a", delay = 120, passwordHash = secret)), passwords = mapOf("a" to "nope"), edit = ::turnOff).settings
+        assertTrue(s.blockedAppGroups.single().isActive)
+        assertEquals(now + 120 * minute, s.pending("a")!!.appliesAtMs)
+    }
+
+    @Test
+    fun aPasswordWithNoDelayWaitsTwoDaysWithoutIt() {
+        val s = save(settings(group("a", passwordHash = secret)), edit = ::turnOff).settings
+        assertEquals(now + maxWait, s.pending("a")!!.appliesAtMs)
+    }
+
+    @Test
+    fun addingAPasswordToAGroupWithADelayWaits() {
+        val s = save(settings(group("a", delay = 60))) { it.edit("a") { g -> g.copy(editPasswordHash = secret) } }.settings
+        assertEquals("", s.blockedAppGroups.single().editPasswordHash)
+        assertEquals(now + 60 * minute, s.pending("a")!!.appliesAtMs)
+    }
+
+    @Test
+    fun addingAPasswordToAGroupWithNoHurdleAppliesAtOnce() {
+        val s = save(settings(group("a"))) { it.edit("a") { g -> g.copy(editPasswordHash = secret) } }.settings
+        assertEquals(secret, s.blockedAppGroups.single().editPasswordHash)
+        assertNull(s.pending("a"))
+    }
+
+    @Test
+    fun removingThePasswordFromAGroupWithADelayAppliesAtOnce() {
+        val s = save(settings(group("a", delay = 60, passwordHash = secret))) { it.edit("a") { g -> g.copy(editPasswordHash = "") } }.settings
+        assertEquals("", s.blockedAppGroups.single().editPasswordHash)
+        assertNull(s.pending("a"))
+    }
+
+    @Test
+    fun removingTheOnlyHurdleWaitsTwoDays() {
+        val s = save(settings(group("a", passwordHash = secret))) { it.edit("a") { g -> g.copy(editPasswordHash = "") } }.settings
+        assertEquals(secret, s.blockedAppGroups.single().editPasswordHash)
+        assertEquals(now + maxWait, s.pending("a")!!.appliesAtMs)
+    }
+
+    @Test
+    fun changingThePasswordWaitsUnlessTheOldOneIsEntered() {
+        val other = WarningPassword.hash("other")
+        val start = settings(group("a", delay = 60, passwordHash = secret))
+        val waits = save(start) { it.edit("a") { g -> g.copy(editPasswordHash = other) } }.settings
+        assertEquals(secret, waits.blockedAppGroups.single().editPasswordHash)
+        assertTrue(waits.pending("a") != null)
+
+        val applied = save(start, passwords = mapOf("a" to "secret")) {
+            it.edit("a") { g -> g.copy(editPasswordHash = other) }
+        }.settings
+        assertEquals(other, applied.blockedAppGroups.single().editPasswordHash)
+    }
+
+    @Test
+    fun aWaitingNewPasswordCannotBeUsedYet() {
+        var s = settings(group("a", delay = 60, passwordHash = secret))
+        s = save(s) { it.edit("a") { g -> g.copy(editPasswordHash = WarningPassword.hash("other")) } }.settings
+        s = save(s, passwords = mapOf("a" to "other"), edit = ::turnOff).settings
+        assertTrue(s.blockedAppGroups.single().isActive)
+    }
+
+    @Test
+    fun thePasswordDoesNotSkipTamperProtection() {
+        val base = settings(group("a", delay = 60, passwordHash = secret))
+        val tamper = base.copy(
+            settingsChangeDelayConfig2 = base.settingsChangeDelayConfig2.copy(requireTamperProtectionOff = true),
+            antiUninstallConfig2 = base.antiUninstallConfig2.copy(isEnabled = true),
+        )
+        val s = save(tamper, passwords = mapOf("a" to "secret"), edit = ::turnOff).settings
+        assertTrue(s.blockedAppGroups.single().isActive)
+        assertEquals(now, s.pending("a")!!.appliesAtMs)
+    }
+
+    @Test
+    fun temporaryDisableNeedsThePasswordWhenTheGroupHasOne() {
+        val config = SettingsChangeDelayConfig(isEnabled = true, delayMinutes = 60)
+        val protectedGroup = group("a", passwordHash = secret)
+        assertFalse(AppGroupGate.temporaryDisableAllowed(config, protectedGroup))
+        assertFalse(AppGroupGate.temporaryDisableAllowed(config, protectedGroup, "nope"))
+        assertTrue(AppGroupGate.temporaryDisableAllowed(config, protectedGroup, "secret"))
+        assertFalse(AppGroupGate.temporaryDisableAllowed(SettingsChangeDelayConfig(), protectedGroup))
     }
 }

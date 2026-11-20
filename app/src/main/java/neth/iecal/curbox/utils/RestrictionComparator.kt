@@ -97,9 +97,27 @@ object RestrictionComparator {
     fun mainDelayMinutes(config: SettingsChangeDelayConfig): Int =
         if (config.isEnabled) config.delayMinutes.coerceIn(0, SettingsChangeDelayConfig.MAX_DELAY_MINUTES) else 0
 
-    /** How long a change that loosens [group] waits: its own delay, else the main one. */
-    fun groupDelayMinutes(group: AppGroup, mainDelayMinutes: Int): Int =
-        (group.changeDelayMinutes ?: mainDelayMinutes).coerceIn(0, SettingsChangeDelayConfig.MAX_DELAY_MINUTES)
+    /**
+     * How long a change that loosens [group] waits when its edit password is not entered:
+     * its own delay, else the main one. A group with a password and no delay waits the
+     * longest delay, so a forgotten password never locks the group for good.
+     */
+    fun groupDelayMinutes(group: AppGroup, mainDelayMinutes: Int): Int {
+        val delay = (group.changeDelayMinutes ?: mainDelayMinutes).coerceIn(0, SettingsChangeDelayConfig.MAX_DELAY_MINUTES)
+        return if (delay == 0 && group.editPasswordHash.isNotEmpty()) SettingsChangeDelayConfig.MAX_DELAY_MINUTES else delay
+    }
+
+    /**
+     * Either hurdle unlocks a weaker change: waiting [groupDelayMinutes], or the edit
+     * password. So a shorter wait is weaker, and so is a new or changed password, because
+     * it adds a shortcut past the wait. A group with no hurdle at all can gain any.
+     */
+    private fun hurdlesSameOrStricter(o: AppGroup, n: AppGroup, mainDelayMinutes: Int): Boolean {
+        val oldWait = groupDelayMinutes(o, mainDelayMinutes)
+        if (oldWait == 0 && o.editPasswordHash.isEmpty()) return true
+        val passwordOk = n.editPasswordHash.isEmpty() || n.editPasswordHash == o.editPasswordHash
+        return passwordOk && groupDelayMinutes(n, mainDelayMinutes) >= oldWait
+    }
 
     /** [mainDelayMinutes] is what groups without their own delay wait. */
     fun appGroups(
@@ -124,8 +142,7 @@ object RestrictionComparator {
     ): Boolean {
         if (!temporaryDisableSameOrShorter(o.isActive, o.temporarilyDisabledUntilMs,
                 n.isActive, n.temporarilyDisabledUntilMs)) return false
-        // A shorter wait on this group's own changes is a loosening, like a shorter main delay.
-        if (groupDelayMinutes(n, mainDelayMinutes) < groupDelayMinutes(o, mainDelayMinutes)) return false
+        if (!hurdlesSameOrStricter(o, n, mainDelayMinutes)) return false
         // Apps can come from the group itself or from linked lists. Dropping an app either
         // way, unlinking a list, or deleting one all shrink this set.
         val newPackages = n.allPackages(newLists)

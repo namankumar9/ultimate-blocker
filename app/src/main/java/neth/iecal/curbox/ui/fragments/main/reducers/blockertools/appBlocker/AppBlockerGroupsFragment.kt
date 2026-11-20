@@ -30,6 +30,7 @@ import neth.iecal.curbox.data.models.allPackages
 import neth.iecal.curbox.data.models.partialActivities
 import neth.iecal.curbox.ui.activity.FragmentActivity
 import neth.iecal.curbox.utils.TimeTools
+import neth.iecal.curbox.utils.GroupPasswordPrompt
 import neth.iecal.curbox.utils.TemporaryDisableDialog
 import neth.iecal.curbox.utils.scheduleConflictsWith
 
@@ -219,6 +220,13 @@ class AppBlockerGroupsFragment : Fragment() {
                     } else {
                         viewModel.updateGroupActiveState(pos, true)
                     }
+                } else if (!isChecked && group.isActive && group.editPasswordHash.isNotEmpty()) {
+                    holder.switchActive.setOnCheckedChangeListener(null)
+                    holder.switchActive.isChecked = true
+                    holder.switchActive.post {
+                        if (pos in 0 until itemCount) notifyItemChanged(pos)
+                    }
+                    turnOffWithPassword(group.id)
                 } else if (!isChecked &&
                     group.isActive &&
                     viewModel.temporaryDisableAvailable.value &&
@@ -248,6 +256,39 @@ class AppBlockerGroupsFragment : Fragment() {
                 showGroupOptions(group)
                 true
             }
+        }
+    }
+
+    /**
+     * Turning off a group with an edit password: the password turns it off now, for as long
+     * as the user picks; without it the change waits like any other.
+     */
+    private fun turnOffWithPassword(groupId: String) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val live = viewModel.liveGroup(groupId)
+            val turnOffAndWait = {
+                val index = viewModel.groups.value.indexOfFirst { it.id == groupId }
+                if (index != -1) viewModel.updateGroupActiveState(index, false)
+            }
+            if (live == null || live.editPasswordHash.isEmpty()) {
+                turnOffAndWait()
+                return@launch
+            }
+            GroupPasswordPrompt.show(
+                requireContext(),
+                layoutInflater,
+                live.editPasswordHash,
+                getString(R.string.group_password_turn_off_message, live.name),
+                onPassword = { password ->
+                    TemporaryDisableDialog.show(
+                        this@AppBlockerGroupsFragment,
+                        getString(R.string.temporary_disable_title, live.name)
+                    ) { minutes ->
+                        viewModel.temporarilyDisableGroup(groupId, minutes, password)
+                    }
+                },
+                onWait = turnOffAndWait,
+            )
         }
     }
 

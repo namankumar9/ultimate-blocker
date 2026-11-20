@@ -23,6 +23,7 @@ import neth.iecal.curbox.data.models.AppGroup
 import neth.iecal.curbox.data.models.AppGroupConfig
 import neth.iecal.curbox.databinding.FragmentCreateAppGroupBinding
 import neth.iecal.curbox.ui.activity.SelectAppsActivity
+import neth.iecal.curbox.utils.GroupPasswordPrompt
 import neth.iecal.curbox.utils.scheduleConflictsWith
 import java.util.UUID
 
@@ -42,6 +43,8 @@ class CreateAppGroupFragment : Fragment() {
     private var autoAddNewApps = false
     /** This group's own settings change delay. Null uses the main delay. */
     private var changeDelayMinutes: Int? = null
+    /** "salt:hash" of this group's edit password, empty for none. */
+    private var editPasswordHash = ""
     private val viewModel: AppBlockerSettingViewModel by activityViewModels()
 
     private val selectAppsLauncher = registerForActivityResult(
@@ -100,16 +103,20 @@ class CreateAppGroupFragment : Fragment() {
                         selectedActivities = ArrayList(group.selectedActivities)
                         autoAddNewApps = group.autoAddNewApps
                         changeDelayMinutes = group.changeDelayMinutes
+                        editPasswordHash = group.editPasswordHash
                         updateSelectAppsButton()
                         updateChangeDelayButton()
+                        updatePasswordButton()
 
                         binding.btnDeleteGroup.visibility = View.VISIBLE
                         binding.btnDeleteGroup.setOnClickListener {
-                            isDeleting = true
-                            viewLifecycleOwner.lifecycleScope.launch {
-                                viewModel.deleteGroup(group.id)
-                                Toast.makeText(requireContext(), getString(R.string.group_deleted), Toast.LENGTH_SHORT).show()
-                                requireActivity().finish()
+                            withPasswordIfLoosening(group.id, null) { password ->
+                                isDeleting = true
+                                viewLifecycleOwner.lifecycleScope.launch {
+                                    viewModel.deleteGroup(group.id, password)
+                                    Toast.makeText(requireContext(), getString(R.string.group_deleted), Toast.LENGTH_SHORT).show()
+                                    requireActivity().finish()
+                                }
                             }
                         }
 
@@ -126,6 +133,8 @@ class CreateAppGroupFragment : Fragment() {
         binding.btnSelectApps.setOnClickListener { openAppSelector() }
         binding.btnGroupChangeDelay.setOnClickListener { pickChangeDelay() }
         updateChangeDelayButton()
+        binding.btnGroupPassword.setOnClickListener { editPassword() }
+        updatePasswordButton()
 
         binding.btnConfigureSchedule.setOnClickListener { openScheduleEditor() }
         binding.btnConfigureUsage.setOnClickListener { openUsageEditor() }
@@ -196,6 +205,7 @@ class CreateAppGroupFragment : Fragment() {
             warningScreenConfig = viewModel.warningScrnConfig,
             autoAddNewApps = autoAddNewApps,
             changeDelayMinutes = changeDelayMinutes,
+            editPasswordHash = editPasswordHash,
             // Turning auto-add on only covers apps installed from now on.
             autoAddCheckedUntilMs =
                 if (autoAddNewApps && targetExistingGroup?.autoAddNewApps == true) targetExistingGroup.autoAddCheckedUntilMs
@@ -220,11 +230,46 @@ class CreateAppGroupFragment : Fragment() {
             return
         }
 
+        if (isEditingRecord && targetExistingGroup != null) {
+            withPasswordIfLoosening(newGroupId, newGroup) { password ->
+                persistGroup(newGroup, true, password)
+            }
+        } else {
+            persistGroup(newGroup, false, null)
+        }
+    }
+
+    /**
+     * Runs [action] right away unless saving [newGroup] (null: deleting) loosens a group that
+     * has an edit password. Then it asks for the password, or lets the change wait.
+     * [action] gets the password, or null to let the change wait.
+     */
+    private fun withPasswordIfLoosening(groupId: String, newGroup: AppGroup?, action: (String?) -> Unit) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val live = viewModel.liveGroup(groupId)
+            if (live == null || live.editPasswordHash.isEmpty() || !viewModel.loosensGroup(groupId, newGroup)) {
+                action(null)
+                return@launch
+            }
+            GroupPasswordPrompt.show(
+                requireContext(),
+                layoutInflater,
+                live.editPasswordHash,
+                getString(R.string.group_password_edit_message, live.name),
+                onPassword = { action(it) },
+                onWait = { action(null) },
+            )
+        }
+    }
+
+    private fun persistGroup(newGroup: AppGroup, isEditingRecord: Boolean, password: String?) {
+        if (_binding == null) return
+        val newGroupId = newGroup.id
         binding.fabSaveGroup.isEnabled = false
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                if (isEditingRecord && targetExistingGroup != null) {
-                    viewModel.updateGroupById(newGroup)
+                if (isEditingRecord) {
+                    viewModel.updateGroupById(newGroup, password)
                 } else {
                     viewModel.addGroupAndWait(newGroup)
                     if (arguments == null) {
@@ -296,9 +341,13 @@ class CreateAppGroupFragment : Fragment() {
 
     private fun updateChangeDelayButton() {
         if (_binding == null) return
-        binding.btnGroupChangeDelay.text =
-            if (changeDelayMinutes == null) getString(R.string.group_change_delay_main)
-            else getString(R.string.group_change_delay_own, changeDelayLabel(changeDelayMinutes))
+        binding.btnGroupChangeDelay.text = when {
+            changeDelayMinutes == null -> getString(R.string.group_change_delay_main)
+            // No delay plus a password: without the password, changes wait the longest delay.
+            changeDelayMinutes == 0 && editPasswordHash.isNotEmpty() ->
+                getString(R.string.group_change_delay_password_only)
+            else -> getString(R.string.group_change_delay_own, changeDelayLabel(changeDelayMinutes))
+        }
     }
 
     private fun pickChangeDelay() {
@@ -312,6 +361,39 @@ class CreateAppGroupFragment : Fragment() {
                 dialog.dismiss()
             }
             .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun updatePasswordButton() {
+        if (_binding == null) return
+        updateChangeDelayButton()
+        binding.btnGroupPassword.setText(
+            if (editPasswordHash.isEmpty()) R.string.group_password_none else R.string.group_password_is_set
+        )
+    }
+
+    /** Sets, changes or removes the password. Saving the group applies it like any edit. */
+    private fun editPassword() {
+        if (editPasswordHash.isEmpty()) {
+            GroupPasswordPrompt.pickNew(requireContext(), layoutInflater) {
+                editPasswordHash = it
+                updatePasswordButton()
+            }
+            return
+        }
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.group_password_section_title)
+            .setItems(arrayOf(getString(R.string.group_password_change), getString(R.string.group_password_remove))) { _, which ->
+                if (which == 0) {
+                    GroupPasswordPrompt.pickNew(requireContext(), layoutInflater) {
+                        editPasswordHash = it
+                        updatePasswordButton()
+                    }
+                } else {
+                    editPasswordHash = ""
+                    updatePasswordButton()
+                }
+            }
             .show()
     }
 
