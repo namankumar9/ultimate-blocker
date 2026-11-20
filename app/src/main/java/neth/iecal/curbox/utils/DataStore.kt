@@ -915,11 +915,21 @@ class DataStoreManager(private val context: Context) {
 
     /**
      * How long a weaker change to [field] waits. The app lists wait for the longest delay among
-     * the groups the change loosens; everything else uses the main delay.
+     * the groups the change loosens. A main delay change that shortens some groups' waits
+     * waits for the longest of those. Everything else uses the main delay.
      */
-    private fun gateDelayMinutes(field: GatedSettingsField, current: Settings, proposed: Settings): Int =
-        if (field == GatedSettingsField.APP_LISTS) AppGroupGate.appListsDelayMinutes(current, proposed)
-        else RestrictionComparator.mainDelayMinutes(current.settingsChangeDelayConfig2)
+    private fun gateDelayMinutes(field: GatedSettingsField, current: Settings, proposed: Settings): Int {
+        val mainDelay = RestrictionComparator.mainDelayMinutes(current.settingsChangeDelayConfig2)
+        return when (field) {
+            GatedSettingsField.APP_LISTS -> AppGroupGate.appListsDelayMinutes(current, proposed)
+            GatedSettingsField.CHANGE_DELAY -> maxOf(
+                mainDelay,
+                RestrictionComparator.groupsShortenedByMainDelay(current, proposed)
+                    .maxOfOrNull { RestrictionComparator.groupDelayMinutes(it, mainDelay) } ?: 0
+            )
+            else -> mainDelay
+        }
+    }
 
     private suspend fun schedulePendingChanges() {
         val current = settingsDataStore.data.first()

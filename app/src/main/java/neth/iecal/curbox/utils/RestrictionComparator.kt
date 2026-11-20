@@ -77,7 +77,8 @@ object RestrictionComparator {
                 GatedSettingsField.WEBSITE_USAGE_TRACKING ->
                     !current.isWebsiteUsageTrackingEnabled || proposed.isWebsiteUsageTrackingEnabled
                 GatedSettingsField.CHANGE_DELAY ->
-                    changeDelay(current.settingsChangeDelayConfig2, proposed.settingsChangeDelayConfig2)
+                    changeDelay(current.settingsChangeDelayConfig2, proposed.settingsChangeDelayConfig2) &&
+                        groupsShortenedByMainDelay(current, proposed).isEmpty()
             }
         } catch (e: Exception) {
             false
@@ -91,6 +92,19 @@ object RestrictionComparator {
         // Turning this off is itself a reduction, so it has to earn its own way past the gate
         val tamperGateOk = !old.requireTamperProtectionOff || new.requireTamperProtectionOff
         return timeOk && tamperGateOk
+    }
+
+    /**
+     * Active App Pause groups whose wait gets shorter when the main delay changes from
+     * [current] to [proposed]. Groups that use the main delay follow it, so turning the main
+     * delay on can shorten the 2 day wait of a group with a password and no delay of its own.
+     */
+    fun groupsShortenedByMainDelay(current: Settings, proposed: Settings): List<AppGroup> {
+        val oldMain = mainDelayMinutes(current.settingsChangeDelayConfig2)
+        val newMain = mainDelayMinutes(proposed.settingsChangeDelayConfig2)
+        return current.blockedAppGroups
+            .filter { it.isActive || it.temporarilyDisabledUntilMs > 0L }
+            .filter { groupDelayMinutes(it, newMain) < groupDelayMinutes(it, oldMain) }
     }
 
     /** The main delay in force, in minutes: 0 while it is switched off. */

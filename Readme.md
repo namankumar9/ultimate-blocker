@@ -90,6 +90,21 @@ Curbox goes beyond simple app timers. It targets the specific triggers that lead
 - **Short-Form Content Blocker:** Specifically target Instagram Reels and YouTube Shorts.
 - **Granular UI Hiding:** Block specific parts of an app's UI (e.g., block the entire YouTube home feed while allowing searches or hide instagram feed while allowing posts and messages from friends).
 - **URL Path Blocking:** Block specific sections of a website (e.g., block `m.youtube.com/shorts/*` but allow `m.youtube.com`).
+- **Settings Change Delay:** Changes that make a rule weaker wait before they apply, so you have time to change your mind. Stricter changes apply right away.
+- **Per Group Hurdles:** Each App Pause group can have its own change delay, its own edit password, or both. See [Change delay and edit passwords](#change-delay-and-edit-passwords).
+
+#### Change delay and edit passwords
+Each App Pause group can be protected in two ways. Either one lets you make the group weaker, for example turn it off, delete it, or give it a bigger usage limit.
+
+- **Change delay:** the change waits for the group's delay, then applies by itself. You can cancel it while it waits. A group uses the main Settings change delay unless you give it its own.
+- **Edit password:** enter it to apply the change right away. Without it, the change waits for the delay.
+
+**If a group has a password but no delay, changes without the password wait 2 days.** This is your way back in if you lose or forget the password: choose "Wait instead", and the change applies after 2 days. To use it, open the group, make the change, and pick "Wait instead" when asked for the password.
+
+Good to know:
+- Adding a password to a group that already has a delay, or changing the password, also waits. A password is a shortcut past the wait, so adding one makes the group easier to change.
+- Turning on the main Settings change delay can't be used to shorten a group's wait. If it would, it waits as long as that group would.
+- "Also require tamper protection off" holds every weaker change until tamper protection is off, even with the password.
 
 #### Insights & Awareness
 - **Usage Analytics:** Detailed insights into app and website usage.

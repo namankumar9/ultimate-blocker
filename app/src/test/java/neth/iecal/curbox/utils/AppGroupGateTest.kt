@@ -311,4 +311,26 @@ class AppGroupGateTest {
         assertTrue(AppGroupGate.temporaryDisableAllowed(config, protectedGroup, "secret"))
         assertFalse(AppGroupGate.temporaryDisableAllowed(SettingsChangeDelayConfig(), protectedGroup))
     }
+
+    @Test
+    fun turningTheMainDelayOnCannotShortenAPasswordGroupsTwoDayWait() {
+        val current = settings(group("a", passwordHash = secret))
+        val proposed = current.copy(settingsChangeDelayConfig2 = SettingsChangeDelayConfig(isEnabled = true, delayMinutes = 10))
+        assertFalse(RestrictionComparator.isSameOrStricter(GatedSettingsField.CHANGE_DELAY, current, proposed))
+        assertEquals(listOf("a"), RestrictionComparator.groupsShortenedByMainDelay(current, proposed).map { it.id })
+    }
+
+    @Test
+    fun turningTheMainDelayOnIsStillStricterWithoutPasswordGroups() {
+        val current = settings(group("a"), group("b", delay = 0, passwordHash = secret))
+        val proposed = current.copy(settingsChangeDelayConfig2 = SettingsChangeDelayConfig(isEnabled = true, delayMinutes = 10))
+        assertTrue(RestrictionComparator.isSameOrStricter(GatedSettingsField.CHANGE_DELAY, current, proposed))
+    }
+
+    @Test
+    fun turningTheMainDelayOffGivesAPasswordGroupTheTwoDayWait() {
+        val current = settings(group("a", passwordHash = secret), mainDelay = 60)
+        val off = current.copy(settingsChangeDelayConfig2 = SettingsChangeDelayConfig())
+        assertTrue(RestrictionComparator.groupsShortenedByMainDelay(current, off).isEmpty())
+    }
 }
