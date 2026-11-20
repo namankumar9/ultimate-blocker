@@ -1,0 +1,3 @@
+NEW:
+• App groups: press and hold a group to make a copy. The copy starts turned off.
+• App picker: save the apps you picked as a new app list from the menu.
