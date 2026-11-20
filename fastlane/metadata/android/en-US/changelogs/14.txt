@@ -1,0 +1,5 @@
+NEW:
+• App groups: each group can have its own settings change delay. Open a group and pick how long weaker changes to it wait. It works even when the main delay is off.
+
+IMPROVEMENTS:
+• Waiting changes to different app groups now each keep their own timer, so one group no longer holds up another.
