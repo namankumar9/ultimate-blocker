@@ -113,7 +113,7 @@ object AppGroupGate {
         if (existing?.newValueJson == newJson) return Result(current, Outcome())
 
         val live = current.blockedAppGroups.find { it.id == id }
-        val newGroup = parseGroup(newJson, gson)
+        val newGroup = parseGroup(newJson, gson)?.let { rebasedAutostart(live, it, nowMs) }
         if (newJson.isNotEmpty() && newGroup == null) return Result(current, Outcome())
         val proposed = current.copy(blockedAppGroups = withGroup(current.blockedAppGroups, id, newGroup))
         val mainDelay = RestrictionComparator.mainDelayMinutes(delayConfig)
@@ -191,10 +191,21 @@ object AppGroupGate {
         change.field == GatedSettingsField.APP_GROUPS.name && change.itemId == id
 
     /** Applies a waiting change for one group. Null when it cannot be read. */
-    fun applyPending(groups: List<AppGroup>, change: PendingSettingsChange, gson: Gson): List<AppGroup>? {
+    fun applyPending(
+        groups: List<AppGroup>,
+        change: PendingSettingsChange,
+        gson: Gson,
+        nowMs: Long = System.currentTimeMillis(),
+    ): List<AppGroup>? {
         if (change.newValueJson.isEmpty()) return withGroup(groups, change.itemId, null)
         val group = parseGroup(change.newValueJson, gson) ?: return null
-        return withGroup(groups, change.itemId, group)
+        val live = groups.find { it.id == change.itemId }
+        return withGroup(groups, change.itemId, rebasedAutostart(live, group, nowMs))
+    }
+
+    private fun rebasedAutostart(live: AppGroup?, group: AppGroup, nowMs: Long): AppGroup {
+        val config = AutostartSchedule.rebased(live?.autostartConfig, group.autostartConfig, nowMs)
+        return if (config == group.autostartConfig) group else group.copy(autostartConfig = config)
     }
 
     /** [groups] with group [id] replaced in place, appended when new, or removed when [group] is null. */

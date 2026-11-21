@@ -15,6 +15,18 @@ object AutostartSchedule {
     fun armed(config: AppGroupAutostartConfig, nowMs: Long): AppGroupAutostartConfig =
         config.copy(nextFireAtMs = nextFireAfter(config, nowMs))
 
+    /**
+     * The autostart [incoming] should land with when it replaces [live], for example when a
+     * waiting change applies. Its next fire time may be stale, since a waiting change keeps the
+     * copy saved when it was made. The same config keeps [live]'s bookkeeping; a different one
+     * is armed from [nowMs], and a One Time start that has already passed is dropped.
+     */
+    fun rebased(live: AppGroupAutostartConfig?, incoming: AppGroupAutostartConfig, nowMs: Long): AppGroupAutostartConfig {
+        if (live != null && live.copy(nextFireAtMs = 0L) == incoming.copy(nextFireAtMs = 0L)) return live
+        val armed = armed(incoming, nowMs)
+        return if (armed.mode == AutostartMode.OneTime && armed.nextFireAtMs == 0L) AppGroupAutostartConfig() else armed
+    }
+
     /** The next switch on strictly after [nowMs], or 0 when nothing is scheduled. */
     fun nextFireAfter(config: AppGroupAutostartConfig, nowMs: Long): Long = when (config.mode) {
         AutostartMode.None -> 0L
