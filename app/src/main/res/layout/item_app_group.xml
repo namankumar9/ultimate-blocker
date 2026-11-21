@@ -49,6 +49,16 @@
                 android:visibility="gone" />
         </LinearLayout>
 
+        <ImageButton
+            android:id="@+id/btn_group_autostart"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/autostart_title_short"
+            android:padding="8dp"
+            android:src="@drawable/ic_autostart_wand" />
+
         <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/switch_group_active"
             android:layout_width="wrap_content"

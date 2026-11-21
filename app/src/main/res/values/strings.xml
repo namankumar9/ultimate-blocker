@@ -692,6 +692,28 @@
     <string name="change_delay_review_undo">Undo this change</string>
     <string name="change_delay_applied_over_waiting_toast">Stricter edit applied now. The earlier %1$s change still waits.</string>
     <string name="change_delay_dropped_toast">The stricter change is active. The pending change for %1$s was removed.</string>
+    <string name="autostart_title_short">Autostart</string>
+    <string name="autostart_dialog_title">Autostart for %1$s</string>
+    <string name="autostart_explainer">Pick when this block turns itself back on. Autostart only turns the block on. It never turns it off.</string>
+    <string name="autostart_none">None</string>
+    <string name="autostart_one_time">One time</string>
+    <string name="autostart_time_of_day">Time of day</string>
+    <string name="autostart_one_time_label">Turn on at</string>
+    <string name="autostart_time_label">Turn on at</string>
+    <string name="autostart_days_label">On these days</string>
+    <string name="autostart_at">%1$s at %2$s</string>
+    <string name="autostart_one_time_past">Pick a time in the future.</string>
+    <string name="autostart_no_days">Pick at least one day.</string>
+    <string name="autostart_password_message">\"%1$s\" has an edit password. Enter it to change autostart now, or wait for the delay.</string>
+    <string-array name="autostart_day_labels">
+        <item>Mon</item>
+        <item>Tue</item>
+        <item>Wed</item>
+        <item>Thu</item>
+        <item>Fri</item>
+        <item>Sat</item>
+        <item>Sun</item>
+    </string-array>
     <string name="temporary_disable_title">Temporarily disable %1$s</string>
     <string name="temporary_disable_5m">5 minutes</string>
     <string name="temporary_disable_15m">15 minutes</string>

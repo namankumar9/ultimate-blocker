@@ -70,6 +70,8 @@ open class BaseBlockingService : AccessibilityService() {
             // JobScheduler can defer the re-enable job by hours under Doze, so the
             // heartbeat also ends temporary breaks that have run out
             dataStoreManager.restoreDueTemporaryAppGroups(rescheduleAlways = false)
+            // Likewise fires any autostart whose time has passed, in case its job was deferred
+            dataStoreManager.restoreDueAutostarts(rescheduleAlways = false)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

@@ -35,6 +35,12 @@ data class AppGroup(
      * [neth.iecal.curbox.utils.WarningPassword] for the format.
      */
     val editPasswordHash: String = "",
+    /**
+     * When this group turns itself back on automatically. See [AppGroupAutostartConfig].
+     * Autostart only ever switches the group on, so gaining or widening it counts as a
+     * stricter change and removing it waits out the group's delay like any other loosening.
+     */
+    val autostartConfig: AppGroupAutostartConfig = AppGroupAutostartConfig(),
     // Kept only so settings written by older versions can be migrated.
     @Deprecated("Use config")
     val blockingType: AppBlockingType = AppBlockingType.Usage, // "USAGE" or "TIME"
@@ -47,6 +53,33 @@ data class AppGroup(
 enum class AppBlockingType{
     Usage, Timed, OnOpen
 }
+
+/** How a group switches itself back on. See [AppGroupAutostartConfig]. */
+enum class AutostartMode {
+    /** No autostart. */
+    None,
+    /** Switch on once at [AppGroupAutostartConfig.oneTimeAtMs], then clear itself. */
+    OneTime,
+    /** Switch on every chosen day at [AppGroupAutostartConfig.timeOfDayMinutes]. */
+    TimeOfDay,
+}
+
+/**
+ * Turns a group on automatically. It never turns a group off, so it only makes the block
+ * stronger. The user sets [mode] and its times; [nextFireAtMs] is bookkeeping the app fills
+ * in, the wall clock moment of the next switch on, and must not be edited by hand.
+ */
+data class AppGroupAutostartConfig(
+    val mode: AutostartMode = AutostartMode.None,
+    /** OneTime: wall clock millis to switch on. */
+    val oneTimeAtMs: Long = 0L,
+    /** TimeOfDay: minutes past midnight to switch on, 0..1439. */
+    val timeOfDayMinutes: Int = 0,
+    /** TimeOfDay: days it fires on, 0 = Sunday through 6 = Saturday. */
+    val days: List<Int> = emptyList(),
+    /** The next switch on, in wall clock millis. 0 when nothing is scheduled. */
+    val nextFireAtMs: Long = 0L,
+)
 
 data class ScheduledUsageConfig(
     val schedule: AppTimeConfig = AppTimeConfig.allDay(),

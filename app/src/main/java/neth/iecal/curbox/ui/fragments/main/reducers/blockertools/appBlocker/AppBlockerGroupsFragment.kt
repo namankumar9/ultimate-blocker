@@ -6,8 +6,12 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
+import android.content.res.ColorStateList
+import androidx.core.content.ContextCompat
+import com.google.android.material.color.MaterialColors
 import neth.iecal.curbox.utils.ViewUtils
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -26,9 +30,13 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import neth.iecal.curbox.R
 import neth.iecal.curbox.data.models.AppGroup
+import neth.iecal.curbox.data.models.AppGroupAutostartConfig
+import neth.iecal.curbox.data.models.AutostartMode
 import neth.iecal.curbox.data.models.allPackages
 import neth.iecal.curbox.data.models.partialActivities
 import neth.iecal.curbox.ui.activity.FragmentActivity
+import neth.iecal.curbox.utils.AppGroupAutostartDialog
+import neth.iecal.curbox.utils.AutostartSchedule
 import neth.iecal.curbox.utils.TimeTools
 import neth.iecal.curbox.utils.GroupPasswordPrompt
 import neth.iecal.curbox.utils.TemporaryDisableDialog
@@ -120,6 +128,7 @@ class AppBlockerGroupsFragment : Fragment() {
             val tvDetails: TextView = view.findViewById(R.id.tv_group_details)
             val tvRemaining: TextView = view.findViewById(R.id.tv_group_remaining)
             val switchActive: SwitchMaterial = view.findViewById(R.id.switch_group_active)
+            val btnAutostart: ImageButton = view.findViewById(R.id.btn_group_autostart)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -249,6 +258,22 @@ class AppBlockerGroupsFragment : Fragment() {
                 }
             }
 
+            // Blue when an autostart is set, muted when it is off, like the row's other hints.
+            val autostartOn = group.autostartConfig.mode != AutostartMode.None
+            val tint = if (autostartOn) {
+                MaterialColors.getColor(holder.btnAutostart, com.google.android.material.R.attr.colorPrimary)
+            } else {
+                ContextCompat.getColor(requireContext(), R.color.md_theme_onSurfaceVariant)
+            }
+            holder.btnAutostart.imageTintList = ColorStateList.valueOf(tint)
+            holder.btnAutostart.setOnClickListener {
+                AppGroupAutostartDialog.show(
+                    this@AppBlockerGroupsFragment,
+                    getString(R.string.autostart_dialog_title, group.name),
+                    group.autostartConfig
+                ) { config -> saveAutostart(group.id, config) }
+            }
+
             holder.itemView.setOnClickListener {
                 openGroup(group.id)
             }
@@ -289,6 +314,36 @@ class AppBlockerGroupsFragment : Fragment() {
                 },
                 onWait = turnOffAndWait,
             )
+        }
+    }
+
+    /**
+     * Saves a new autostart config through the same gate as any other group edit. Gaining or
+     * widening autostart is stricter and lands now; dropping or narrowing it waits out the
+     * group's delay, or takes its edit password when it has one.
+     */
+    private fun saveAutostart(groupId: String, config: AppGroupAutostartConfig) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val live = viewModel.liveGroup(groupId) ?: return@launch
+            val armed = AutostartSchedule.armed(config, System.currentTimeMillis())
+            val newGroup = live.copy(autostartConfig = armed)
+            if (newGroup == live) return@launch
+            val save = { password: String? ->
+                viewLifecycleOwner.lifecycleScope.launch { viewModel.updateGroupById(newGroup, password) }
+                Unit
+            }
+            if (viewModel.loosensGroup(groupId, newGroup) && live.editPasswordHash.isNotEmpty()) {
+                GroupPasswordPrompt.show(
+                    requireContext(),
+                    layoutInflater,
+                    live.editPasswordHash,
+                    getString(R.string.autostart_password_message, live.name),
+                    onPassword = { password -> save(password) },
+                    onWait = { save(null) },
+                )
+            } else {
+                save(null)
+            }
         }
     }
 

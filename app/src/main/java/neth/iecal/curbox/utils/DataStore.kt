@@ -32,6 +32,7 @@ import neth.iecal.curbox.data.models.upgradeLegacyAppGroupConfigs
 import neth.iecal.curbox.data.models.upgradeLegacyKeywordGroupConfigs
 import neth.iecal.curbox.data.models.upgradeLegacyConfig
 import neth.iecal.curbox.hardcoded.normalized
+import neth.iecal.curbox.services.AppGroupAutostartJob
 import neth.iecal.curbox.services.TemporaryGroupDisableJob
 import java.io.File
 import java.io.IOException
@@ -226,6 +227,7 @@ class DataStoreManager(private val context: Context) {
             result.settings
         }
         schedulePendingChanges()
+        scheduleAutostarts()
         val field = GatedSettingsField.APP_GROUPS
         val deferred = outcome.deferred
         if (outcome.appliedOverWaiting) {
@@ -279,6 +281,7 @@ class DataStoreManager(private val context: Context) {
                 )
             }
             schedulePendingChanges()
+            scheduleAutostarts()
             result
         }
 
@@ -716,6 +719,35 @@ class DataStoreManager(private val context: Context) {
         }
     }
 
+    /**
+     * Switches on every group whose autostart time has arrived and re-arms the alarm for the
+     * next one. Called from the service heartbeat, the autostart job, and app start, so a due
+     * autostart lands no matter which process is alive.
+     *
+     * @param rescheduleAlways false skips rescheduling the job when nothing fired, so the
+     * frequent service heartbeat does not keep cancelling and recreating it.
+     */
+    suspend fun restoreDueAutostarts(rescheduleAlways: Boolean = true) {
+        var nextDeadline: Long? = null
+        var changed = false
+        settingsDataStore.updateData { current ->
+            val now = System.currentTimeMillis()
+            val updated = current.applyDueAutostarts(now)
+            changed = updated != current
+            nextDeadline = updated.earliestAutostart(now)
+            updated
+        }
+        if (changed || rescheduleAlways) {
+            AppGroupAutostartJob.schedule(context, nextDeadline)
+        }
+    }
+
+    /** Re-arms the autostart alarm from the current settings, after a group edit lands. */
+    private suspend fun scheduleAutostarts() {
+        val settings = settingsDataStore.data.first()
+        AppGroupAutostartJob.schedule(context, settings.earliestAutostart(System.currentTimeMillis()))
+    }
+
     private fun temporaryDisableDeadline(durationMinutes: Long): Long =
         if (durationMinutes == TemporaryDisableDialog.UNTIL_MANUALLY_ENABLED) {
             TemporaryDisableDialog.UNTIL_MANUALLY_ENABLED
@@ -780,6 +812,7 @@ class DataStoreManager(private val context: Context) {
             }
         }
         schedulePendingChanges()
+        scheduleAutostarts()
         return appliedAny
     }
 

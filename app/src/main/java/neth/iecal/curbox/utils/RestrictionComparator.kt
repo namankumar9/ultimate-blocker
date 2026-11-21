@@ -4,6 +4,8 @@ import com.google.gson.Gson
 import neth.iecal.curbox.data.models.AppBlockerWarningScreenConfig
 import neth.iecal.curbox.data.models.AppBlockingType
 import neth.iecal.curbox.data.models.AppGroup
+import neth.iecal.curbox.data.models.AppGroupAutostartConfig
+import neth.iecal.curbox.data.models.AutostartMode
 import neth.iecal.curbox.data.models.AppList
 import neth.iecal.curbox.data.models.BlockedActivity
 import neth.iecal.curbox.data.models.allPackages
@@ -157,6 +159,7 @@ object RestrictionComparator {
         if (!temporaryDisableSameOrShorter(o.isActive, o.temporarilyDisabledUntilMs,
                 n.isActive, n.temporarilyDisabledUntilMs)) return false
         if (!hurdlesSameOrStricter(o, n, mainDelayMinutes)) return false
+        if (!autostartSameOrStricter(o.autostartConfig, n.autostartConfig)) return false
         // Apps can come from the group itself or from linked lists. Dropping an app either
         // way, unlinking a list, or deleting one all shrink this set.
         val newPackages = n.allPackages(newLists)
@@ -174,6 +177,20 @@ object RestrictionComparator {
         return appTimeCoverageSameOrWider(oldConfig.schedule, newConfig.schedule) &&
             usageLimitSameOrLower(oldConfig.usage, newConfig.usage) &&
             usageWindowsSameOrWider(oldConfig.schedule, newConfig.schedule, newConfig.usage)
+    }
+
+    /**
+     * Autostart only ever switches a group on, so it may be gained or widened at once but not
+     * dropped or narrowed without the wait. A group with no autostart can gain any; otherwise
+     * the only free change is the same config, or a Time of Day one kept at the same time with
+     * the same or more days. The next fire time is bookkeeping and ignored here.
+     */
+    private fun autostartSameOrStricter(o: AppGroupAutostartConfig, n: AppGroupAutostartConfig): Boolean {
+        if (o.mode == AutostartMode.None) return true
+        if (o.copy(nextFireAtMs = 0L) == n.copy(nextFireAtMs = 0L)) return true
+        return o.mode == AutostartMode.TimeOfDay && n.mode == AutostartMode.TimeOfDay &&
+            n.timeOfDayMinutes == o.timeOfDayMinutes &&
+            n.days.toHashSet().containsAll(o.days)
     }
 
     fun keywordBlocker(old: KeywordBlocker, new: KeywordBlocker): Boolean {

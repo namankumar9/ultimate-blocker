@@ -13,6 +13,25 @@ import neth.iecal.curbox.data.models.GatedSettingsField
 import neth.iecal.curbox.data.models.PendingSettingsChange
 import neth.iecal.curbox.data.models.Settings
 
+/**
+ * Switches on every group whose autostart is due, and advances or clears each one's next fire.
+ * Autostart only turns groups on, so it also clears any temporary disable on a group it fires.
+ */
+internal fun Settings.applyDueAutostarts(nowMs: Long): Settings = copy(
+    blockedAppGroups = blockedAppGroups.map { group ->
+        val (config, fired) = AutostartSchedule.fireIfDue(group.autostartConfig, nowMs)
+        when {
+            fired -> group.copy(isActive = true, temporarilyDisabledUntilMs = 0L, autostartConfig = config)
+            config != group.autostartConfig -> group.copy(autostartConfig = config)
+            else -> group
+        }
+    }
+)
+
+/** The soonest autostart switch on still in the future, or null when none is scheduled. */
+internal fun Settings.earliestAutostart(nowMs: Long): Long? =
+    blockedAppGroups.mapNotNull { it.autostartConfig.nextFireAtMs.takeIf { ms -> ms > nowMs } }.minOrNull()
+
 internal fun Settings.restoreExpiredTemporaryDisables(nowMs: Long): Settings = copy(
     blockedAppGroups = blockedAppGroups.map { group ->
         if (group.temporarilyDisabledUntilMs in 1..nowMs)
@@ -42,6 +61,7 @@ object SettingsChangeDelayUtils {
                 DataStoreManager(appContext).apply {
                     applyDuePendingChanges()
                     restoreDueTemporaryAppGroups()
+                    restoreDueAutostarts()
                 }
             } catch (e: CancellationException) {
                 throw e
