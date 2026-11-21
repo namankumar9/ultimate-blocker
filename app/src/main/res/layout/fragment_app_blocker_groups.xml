@@ -30,7 +30,49 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/tv_long_press_hint" />
+        app:layout_constraintTop_toBottomOf="@+id/layout_group_tools" />
+
+    <!-- Search and sort, shown only once there are many groups. -->
+    <LinearLayout
+        android:id="@+id/layout_group_tools"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/tv_long_press_hint">
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
+            app:cardCornerRadius="24dp"
+            app:cardElevation="0dp"
+            app:strokeWidth="0dp">
+
+            <SearchView
+                android:id="@+id/search_groups"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:iconifiedByDefault="false"
+                android:queryBackground="@android:color/transparent"
+                android:queryHint="@string/app_groups_search_hint"
+                android:theme="@style/Theme.Material3.DayNight" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <Button
+            android:id="@+id/btn_sort_groups"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:layout_marginStart="4dp"
+            android:contentDescription="@string/app_groups_sort"
+            app:icon="@drawable/baseline_sort_24" />
+    </LinearLayout>
 
     <TextView
         android:id="@+id/tv_long_press_hint"
@@ -54,7 +96,7 @@
         android:textSize="16sp"
         android:visibility="gone"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/textView" />
+        app:layout_constraintTop_toBottomOf="@+id/layout_group_tools" />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fab_add_group"

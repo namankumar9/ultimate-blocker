@@ -7,6 +7,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageButton
+import android.widget.LinearLayout
+import android.widget.SearchView
+import androidx.appcompat.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
 import android.content.res.ColorStateList
@@ -41,11 +44,15 @@ import neth.iecal.curbox.utils.TimeTools
 import neth.iecal.curbox.utils.GroupPasswordPrompt
 import neth.iecal.curbox.utils.TemporaryDisableDialog
 import neth.iecal.curbox.utils.scheduleConflictsWith
+import java.text.Collator
 
 class AppBlockerGroupsFragment : Fragment() {
 
     companion object {
         const val FRAGMENT_ID = "app_blocker_groups"
+
+        /** Search and sort appear once the list grows past this many groups. */
+        private const val TOOLS_MIN_GROUPS = 16
 
         private val DIFF = object : DiffUtil.ItemCallback<AppGroup>() {
             override fun areItemsTheSame(oldItem: AppGroup, newItem: AppGroup) =
@@ -60,6 +67,12 @@ class AppBlockerGroupsFragment : Fragment() {
     private lateinit var tvEmptyState: TextView
     private lateinit var fabAddGroup: FloatingActionButton
     private lateinit var tvLongPressHint: TextView
+    private lateinit var layoutTools: LinearLayout
+    private lateinit var searchGroups: SearchView
+
+    private var allGroups: List<AppGroup> = emptyList()
+    private var searchQuery = ""
+    private var sortByName = false
 
     private val viewModel: AppBlockerSettingViewModel by activityViewModels()
     private val adapter = AppGroupAdapter()
@@ -74,6 +87,22 @@ class AppBlockerGroupsFragment : Fragment() {
         tvEmptyState = view.findViewById(R.id.tv_empty_state)
         fabAddGroup = view.findViewById(R.id.fab_add_group)
         tvLongPressHint = view.findViewById(R.id.tv_long_press_hint)
+        layoutTools = view.findViewById(R.id.layout_group_tools)
+        searchGroups = view.findViewById(R.id.search_groups)
+
+        searchGroups.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(query: String?): Boolean {
+                searchGroups.clearFocus()
+                return true
+            }
+
+            override fun onQueryTextChange(newText: String?): Boolean {
+                searchQuery = newText?.trim().orEmpty()
+                showGroups()
+                return true
+            }
+        })
+        view.findViewById<Button>(R.id.btn_sort_groups).setOnClickListener { showSortMenu(it) }
 
         view.findViewById<Button>(R.id.btn_help).setOnClickListener {
             ViewUtils.showHelpPopup(it, "Block distracting apps and regain control over your screen time.", "https://curbox.app/docs/reducers/app-pause/")
@@ -105,10 +134,8 @@ class AppBlockerGroupsFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.groups.collectLatest { groups ->
-                    tvEmptyState.visibility = if (groups.isEmpty()) View.VISIBLE else View.GONE
-                    rvGroups.visibility = if (groups.isEmpty()) View.GONE else View.VISIBLE
-                    tvLongPressHint.visibility = rvGroups.visibility
-                    adapter.submitList(groups)
+                    allGroups = groups
+                    showGroups()
                 }
             }
         }
@@ -118,6 +145,41 @@ class AppBlockerGroupsFragment : Fragment() {
                 viewModel.appLists.collectLatest { adapter.notifyDataSetChanged() }
             }
         }
+    }
+
+    /** Shows [allGroups] filtered by the search and in the chosen order. */
+    private fun showGroups(onShown: (() -> Unit)? = null) {
+        val showTools = allGroups.size >= TOOLS_MIN_GROUPS
+        if (!showTools && layoutTools.visibility == View.VISIBLE) {
+            // The list shrank back, so drop a search the user can no longer see.
+            searchGroups.setQuery("", false)
+            searchQuery = ""
+            sortByName = false
+        }
+        layoutTools.visibility = if (showTools) View.VISIBLE else View.GONE
+
+        val matching = if (searchQuery.isEmpty()) allGroups
+            else allGroups.filter { it.name.contains(searchQuery, ignoreCase = true) }
+        val shown = if (sortByName) matching.sortedWith(compareBy(Collator.getInstance()) { it.name }) else matching
+
+        tvEmptyState.setText(if (allGroups.isEmpty()) R.string.no_app_groups_yet_create_one else R.string.app_groups_no_match)
+        tvEmptyState.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
+        rvGroups.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
+        tvLongPressHint.visibility = if (allGroups.isEmpty()) View.GONE else View.VISIBLE
+        adapter.submitList(shown) { onShown?.invoke() }
+    }
+
+    private fun showSortMenu(anchor: View) {
+        val popup = PopupMenu(requireContext(), anchor)
+        popup.menu.add(0, 0, 0, R.string.app_groups_sort_default).isChecked = !sortByName
+        popup.menu.add(0, 1, 1, R.string.app_groups_sort_name).isChecked = sortByName
+        popup.menu.setGroupCheckable(0, true, true)
+        popup.setOnMenuItemClickListener { item ->
+            sortByName = item.itemId == 1
+            showGroups { rvGroups.scrollToPosition(0) }
+            true
+        }
+        popup.show()
     }
 
     inner class AppGroupAdapter :

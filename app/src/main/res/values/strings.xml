@@ -783,6 +783,11 @@
     <string name="app_group_make_copy">Make a copy</string>
     <string name="app_group_copy_name">%1$s (copy)</string>
     <string name="app_group_copied">Copy made. It starts turned off.</string>
+    <string name="app_groups_search_hint">Search groups</string>
+    <string name="app_groups_sort">Sort groups</string>
+    <string name="app_groups_sort_default">Default order</string>
+    <string name="app_groups_sort_name">Name, A to Z</string>
+    <string name="app_groups_no_match">No groups match your search.</string>
     <string name="app_group_long_press_hint">Press and hold a group for more options, like making a copy.</string>
     <plurals name="app_list_app_count">
         <item quantity="one">%d app</item>
