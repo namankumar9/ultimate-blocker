@@ -46,9 +46,9 @@ object AppGroupAutostartDialog {
 
         val dayLabels = context.resources.getStringArray(R.array.autostart_day_labels)
         DAY_VALUES.forEachIndexed { index, dayValue ->
-            Chip(context).apply {
+            // Filter chips show a checkmark and a tinted fill when a day is picked.
+            (fragment.layoutInflater.inflate(R.layout.item_autostart_day_chip, chipsDays, false) as Chip).apply {
                 text = dayLabels[index]
-                isCheckable = true
                 isChecked = dayValue in selectedDays
                 setOnCheckedChangeListener { _, checked ->
                     if (checked) selectedDays.add(dayValue) else selectedDays.remove(dayValue)
