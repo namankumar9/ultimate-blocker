@@ -1,0 +1,3 @@
+FIXED:
+• App groups with autostart: a change that waited out the delay, like turning a group off, no longer gets undone by the autostart right after it applies.
+• A one time autostart no longer fires a second time after a waiting change applies.
