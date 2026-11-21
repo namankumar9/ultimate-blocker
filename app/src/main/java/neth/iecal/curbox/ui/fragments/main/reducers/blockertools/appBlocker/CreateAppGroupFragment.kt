@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.collectLatest
 import neth.iecal.curbox.R
 import neth.iecal.curbox.data.models.AppBlockerWarningScreenConfig
 import neth.iecal.curbox.data.models.AppGroup
+import neth.iecal.curbox.data.models.AppGroupAutostartConfig
 import neth.iecal.curbox.data.models.AppGroupConfig
 import neth.iecal.curbox.databinding.FragmentCreateAppGroupBinding
 import neth.iecal.curbox.ui.activity.SelectAppsActivity
@@ -206,6 +207,8 @@ class CreateAppGroupFragment : Fragment() {
             autoAddNewApps = autoAddNewApps,
             changeDelayMinutes = changeDelayMinutes,
             editPasswordHash = editPasswordHash,
+            // The editor has no autostart controls, so keep whatever the group already has.
+            autostartConfig = targetExistingGroup?.autostartConfig ?: AppGroupAutostartConfig(),
             // Turning auto-add on only covers apps installed from now on.
             autoAddCheckedUntilMs =
                 if (autoAddNewApps && targetExistingGroup?.autoAddNewApps == true) targetExistingGroup.autoAddCheckedUntilMs
