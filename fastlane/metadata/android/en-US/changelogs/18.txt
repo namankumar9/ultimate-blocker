@@ -1,0 +1,2 @@
+NEW:
+• App groups: once you have 16 or more groups, a search box and a sort button show above the list. Search finds groups by name. Sort shows them in the default order or by name, A to Z.
