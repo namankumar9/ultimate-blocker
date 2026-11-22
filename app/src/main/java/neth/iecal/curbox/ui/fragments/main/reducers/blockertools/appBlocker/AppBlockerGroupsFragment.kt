@@ -30,6 +30,8 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import neth.iecal.curbox.R
 import neth.iecal.curbox.data.models.AppGroup
@@ -40,6 +42,7 @@ import neth.iecal.curbox.data.models.partialActivities
 import neth.iecal.curbox.ui.activity.FragmentActivity
 import neth.iecal.curbox.utils.AppGroupAutostartDialog
 import neth.iecal.curbox.utils.AutostartSchedule
+import neth.iecal.curbox.utils.DataStoreManager
 import neth.iecal.curbox.utils.TimeTools
 import neth.iecal.curbox.utils.GroupPasswordPrompt
 import neth.iecal.curbox.utils.TemporaryDisableDialog
@@ -141,6 +144,17 @@ class AppBlockerGroupsFragment : Fragment() {
         }
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                DataStoreManager(requireContext()).settings
+                    .map { it.appGroupsSortByName }
+                    .distinctUntilChanged()
+                    .collect { saved ->
+                        sortByName = saved
+                        showGroups()
+                    }
+            }
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 // App counts include linked lists, which can change while the groups do not.
                 viewModel.appLists.collectLatest { adapter.notifyDataSetChanged() }
             }
@@ -154,13 +168,12 @@ class AppBlockerGroupsFragment : Fragment() {
             // The list shrank back, so drop a search the user can no longer see.
             searchGroups.setQuery("", false)
             searchQuery = ""
-            sortByName = false
         }
         layoutTools.visibility = if (showTools) View.VISIBLE else View.GONE
 
         val matching = if (searchQuery.isEmpty()) allGroups
             else allGroups.filter { it.name.contains(searchQuery, ignoreCase = true) }
-        val shown = if (sortByName) matching.sortedWith(compareBy(Collator.getInstance()) { it.name }) else matching
+        val shown = if (showTools && sortByName) matching.sortedWith(compareBy(Collator.getInstance()) { it.name }) else matching
 
         tvEmptyState.setText(if (allGroups.isEmpty()) R.string.no_app_groups_yet_create_one else R.string.app_groups_no_match)
         tvEmptyState.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
@@ -177,6 +190,9 @@ class AppBlockerGroupsFragment : Fragment() {
         popup.setOnMenuItemClickListener { item ->
             sortByName = item.itemId == 1
             showGroups { rvGroups.scrollToPosition(0) }
+            viewLifecycleOwner.lifecycleScope.launch {
+                DataStoreManager(requireContext()).updateAppGroupsSortByName(sortByName)
+            }
             true
         }
         popup.show()

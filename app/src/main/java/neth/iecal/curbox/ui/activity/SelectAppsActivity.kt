@@ -12,6 +12,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.ImageView
 import android.widget.SearchView
 import android.widget.TextView
@@ -34,6 +36,7 @@ import neth.iecal.curbox.blockers.AppBlocker
 import neth.iecal.curbox.data.models.AppList
 import neth.iecal.curbox.databinding.ActivitySelectAppsBinding
 import neth.iecal.curbox.databinding.DialogAddKeywordBinding
+import neth.iecal.curbox.ui.fragments.main.reducers.blockertools.appBlocker.AppListsFragment
 import neth.iecal.curbox.utils.DataStoreManager
 import java.util.UUID
 
@@ -543,13 +546,22 @@ class SelectAppsActivity : AppCompatActivity() {
     @SuppressLint("NotifyDataSetChanged")
     private fun chooseAppLists() {
         val ids = checkedListIds ?: return
-        val names = appLists.map { list ->
-            "${list.name} (${resources.getQuantityString(R.plurals.app_list_app_count, list.packages.size, list.packages.size)})"
-        }.toTypedArray()
         val checked = appLists.map { it.id in ids }.toBooleanArray()
+        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        appLists.forEachIndexed { i, list ->
+            val row = layoutInflater.inflate(R.layout.item_choose_app_list, rows, false)
+            val count = resources.getQuantityString(R.plurals.app_list_app_count, list.packages.size, list.packages.size)
+            row.findViewById<CheckBox>(R.id.choose_list_check).apply {
+                text = "${list.name} ($count)"
+                isChecked = checked[i]
+                setOnCheckedChangeListener { _, isChecked -> checked[i] = isChecked }
+            }
+            row.findViewById<View>(R.id.choose_list_edit).setOnClickListener { confirmEditList(list) }
+            rows.addView(row)
+        }
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.app_lists_choose_title)
-            .setMultiChoiceItems(names, checked) { _, which, isChecked -> checked[which] = isChecked }
+            .setView(ScrollView(this).apply { addView(rows) })
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 ids.clear()
@@ -557,6 +569,23 @@ class SelectAppsActivity : AppCompatActivity() {
                 refreshCoveredApps()
                 appsAdapter?.updateData(sortSelectedItemsToTop(appItemList))
                 updateSelectAllButton()
+            }
+            .show()
+    }
+
+    /** Editing a list leaves this picker, so warn that the choices made here are dropped. */
+    private fun confirmEditList(list: AppList) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.app_list_edit_leave_title)
+            .setMessage(R.string.app_list_edit_leave_message)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.app_list_edit_leave_confirm) { _, _ ->
+                startActivity(Intent(this, FragmentActivity::class.java).apply {
+                    putExtra("fragment", AppListsFragment.FRAGMENT_ID)
+                    putExtra(AppListsFragment.EXTRA_EDIT_LIST_ID, list.id)
+                })
+                setResult(RESULT_CANCELED)
+                finish()
             }
             .show()
     }

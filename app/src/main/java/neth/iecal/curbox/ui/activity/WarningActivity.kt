@@ -387,6 +387,18 @@ class WarningActivity : AppCompatActivity() {
 
         binding.warningMsg.text = warningScreenConfig.message.random()
 
+        if (mode == Constants.WARNING_SCREEN_MODE_APP_BLOCKER && targetId.isNotEmpty()) {
+            // Say which group caused the block, since the message is custom text.
+            lifecycleScope.launch {
+                val groupName = DataStoreManager(this@WarningActivity).settings.first()
+                    .blockedAppGroups.find { it.id == targetId }?.name
+                if (groupName != null) {
+                    binding.warningGroup.text = getString(R.string.warning_blocked_by_group, groupName)
+                    binding.warningGroup.visibility = View.VISIBLE
+                }
+            }
+        }
+
         setupUrgeSurf(mode)
 
         if (warningScreenConfig.isOnOpenConfig) {

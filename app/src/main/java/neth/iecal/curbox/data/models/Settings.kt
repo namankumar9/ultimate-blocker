@@ -4,6 +4,8 @@ data class Settings(
     val externalUnlockConditions: List<ExternalUnlockCondition> = emptyList(),
     val blockedAppGroups: List<AppGroup> = listOf(),
     val appLists: List<AppList> = listOf(),
+    /** The App Pause group list shows groups by name when true, in the default order otherwise. */
+    val appGroupsSortByName: Boolean = false,
     val manualFocusGroups: List<ManualFocusGroup> = listOf(),
     val autoDndGroups: List<AutoDndGroup> = listOf(),
     /**

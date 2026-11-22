@@ -19,6 +19,15 @@
         android:textStyle="bold" />
 
     <TextView
+        android:id="@+id/warning_group"
+        style="@style/TextAppearance.Material3.BodyMedium"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:visibility="gone"
+        tools:text="Blocked by Social media" />
+
+    <TextView
         android:id="@+id/proceeds_left"
         style="@style/TextAppearance.Material3.BodyMedium"
         android:layout_width="match_parent"

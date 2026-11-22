@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="16dp"
+    android:paddingEnd="8dp">
+
+    <com.google.android.material.checkbox.MaterialCheckBox
+        android:id="@+id/choose_list_check"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:minHeight="48dp"
+        android:paddingStart="8dp" />
+
+    <ImageButton
+        android:id="@+id/choose_list_edit"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/app_list_edit_apps"
+        android:padding="12dp"
+        android:src="@drawable/baseline_edit_24"
+        app:tint="?attr/colorOnSurfaceVariant"
+        xmlns:app="http://schemas.android.com/apk/res-auto" />
+</LinearLayout>

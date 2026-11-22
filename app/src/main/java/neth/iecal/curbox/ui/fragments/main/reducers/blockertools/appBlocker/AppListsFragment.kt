@@ -37,6 +37,8 @@ class AppListsFragment : Fragment() {
 
     companion object {
         const val FRAGMENT_ID = "app_lists"
+        /** Optional list id. The screen opens that list's app picker right away. */
+        const val EXTRA_EDIT_LIST_ID = "edit_list_id"
         private const val STATE_EDIT_ID = "edit_id"
         private const val STATE_EDIT_NAME = "edit_name"
 
@@ -73,6 +75,7 @@ class AppListsFragment : Fragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handledEditRequest = savedInstanceState != null
         editId = savedInstanceState?.getString(STATE_EDIT_ID)
         editName = savedInstanceState?.getString(STATE_EDIT_NAME)
     }
@@ -103,12 +106,26 @@ class AppListsFragment : Fragment() {
                 viewModel.appLists.combine(viewModel.groups) { lists, groups ->
                     lists.map { list -> Row(list, groups.count { list.id in it.appListIds }) }
                 }.collect { rows ->
+                    openRequestedList(rows)
                     empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
                     rv.visibility = if (rows.isEmpty()) View.GONE else View.VISIBLE
                     adapter.submitList(rows)
                 }
             }
         }
+    }
+
+    private var handledEditRequest = false
+
+    /** Opens the list named by [EXTRA_EDIT_LIST_ID] once, and not again after a rotation. */
+    private fun openRequestedList(rows: List<Row>) {
+        if (handledEditRequest) return
+        val id = arguments?.getString(EXTRA_EDIT_LIST_ID) ?: return
+        // The first emission can be empty while lists load, so wait until the list shows up.
+        val row = rows.firstOrNull { it.list.id == id } ?: return
+        handledEditRequest = true
+        if (editId != null) return
+        pickAppsFor(row.list.id, row.list.name, row.list.packages)
     }
 
     private fun pickAppsFor(id: String, name: String, current: List<String>) {

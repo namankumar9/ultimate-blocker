@@ -557,6 +557,10 @@ class DataStoreManager(private val context: Context) {
         updateGated(GatedSettingsField.GRAYSCALE_GROUPS) { newGroups }
     }
 
+    suspend fun updateAppGroupsSortByName(sortByName: Boolean) {
+        settingsDataStore.updateData { it.copy(appGroupsSortByName = sortByName) }
+    }
+
     suspend fun updateUsageBackgroundArt(artName: String) {
         settingsDataStore.updateData { it.copy(usageBackgroundArt = artName) }
     }

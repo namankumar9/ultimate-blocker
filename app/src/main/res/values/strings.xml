@@ -762,6 +762,10 @@
         <item quantity="other">%d activities</item>
     </plurals>
     <string name="app_lists_none_chosen">None chosen. Tap to pick lists.</string>
+    <string name="warning_blocked_by_group">Blocked by %1$s</string>
+    <string name="app_list_edit_leave_title">Leave this screen?</string>
+    <string name="app_list_edit_leave_message">You will lose the choices you made on this screen so far. Save them first if you want to keep them.</string>
+    <string name="app_list_edit_leave_confirm">Edit list</string>
     <string name="app_lists_choose_title">Choose app lists</string>
     <string name="app_lists_empty">No app lists yet. Tap + to make one.</string>
     <string name="app_list_add">New app list</string>
