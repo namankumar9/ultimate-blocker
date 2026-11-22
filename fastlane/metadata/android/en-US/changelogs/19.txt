@@ -1,0 +1,4 @@
+NEW:
+• App groups: the sort choice you pick is now saved.
+• Warning screen: it now says which app group caused the block.
+• App lists: each list in the Choose app lists popup has an edit button. It warns you first that your choices on the picker screen will be lost.
